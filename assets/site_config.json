@@ -1,0 +1,68 @@
+{
+  "asset_templates": {
+    "Phihong_AC_EU_Charger_Template": {
+      "asset_type": "Charger",
+      "components": [
+        { "type": "AssetInfo", "make": "Phihong", "model": "AC_EU_Dual_V2" },
+        { "type": "ChargerElectricalConfig", "nominal_voltage_ln": 230.0, "active_phase_count": 3 },
+        { "type": "OcppProfileBehavior", "rate_unit": "Amps", "profile_phases_in_ocpp_message": 3 },
+        { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } }
+      ]
+    },
+    "Alfen_AC_EU_Charger_Template": {
+      "asset_type": "Charger",
+      "components": [
+        { "type": "AssetInfo", "make": "Alfen", "model": "Eve Single Pro-Line" },
+        { "type": "ChargerElectricalConfig", "nominal_voltage_ln": 230.0, "active_phase_count": 1 },
+        { "type": "OcppProfileBehavior", "rate_unit": "Watts", "profile_phases_in_ocpp_message": 1 },
+        { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } }
+      ]
+    },
+    "Generic_Battery_Template": {
+        "asset_type": "Battery",
+        "components": [
+            { "type": "AssetInfo", "make": "Generic", "model": "ESS-100kWh" },
+            { 
+              "type": "MeteringSource", 
+              "source_type": "Modbus", 
+              "details": {
+                "Modbus": {
+                  "ip": "127.0.0.1", 
+                  "port": 5021,
+                  "unit_id": 1, 
+                  "poll_interval_ms": 5000, 
+                  "register_map_key": "generic_battery_read_regs"
+                }
+              } 
+            },
+            {
+              "type": "ModbusControlConfig",
+              "ip": "127.0.0.1",
+              "port": 5021,
+              "unit_id": 1
+            }
+        ]
+    }
+  },
+  "assets": [
+    {
+      "external_id": "CH001",
+      "template_id": "Phihong_AC_EU_Charger_Template",
+      "instance_components": [
+        { "type": "OcppConfig", "version": "V1_6J", "charge_point_id": "CP_CH001_PHI" }
+      ]
+    },
+    {
+      "external_id": "CH002",
+      "template_id": "Alfen_AC_EU_Charger_Template",
+      "instance_components": [
+        { "type": "OcppConfig", "version": "V1_6J", "charge_point_id": "CP_CH002_ALF" }
+      ]
+    },
+    {
+        "external_id": "BAT001",
+        "template_id": "Generic_Battery_Template",
+        "instance_components": []
+    }
+  ]
+}

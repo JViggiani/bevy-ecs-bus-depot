@@ -15,3 +15,9 @@ pub struct SendOcppToChargerCommand {
     pub message_type: EOutgoingOcppMessage, 
     pub ocpp_message_id: Option<String>, 
 }
+
+#[derive(Resource)]
+pub struct OcppRequestReceiver(pub crossbeam_channel::Receiver<OcppRequestFromChargerEvent>);
+
+#[derive(Resource)]
+pub struct OcppCommandSender(pub crossbeam_channel::Sender<SendOcppToChargerCommand>);

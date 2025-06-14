@@ -4,6 +4,8 @@ use super::components::*;
 use crate::core_asset_plugin::{TargetPowerSetpointKw, CurrentMeterReading, MeteringSource, ExternalId, LastAppliedSetpointKw};
 use crate::types::*;
 use chrono::Utc;
+use crate::ocpp_protocol_plugin::events::{OcppRequestReceiver, OcppCommandSender};
+use crossbeam_channel::TryRecvError;
 
 /// Translate OCPP status string to internal enum.
 fn map_status_to_gun_status(status: &str) -> EGunStatusOcpp {
@@ -401,5 +403,29 @@ pub fn alfen_special_init_system(
             alfen_init_status_comp.0 = AlfenSpecialInitState::Complete;
             info!("Alfen Charger {} (ExtID: {}) special initialization sequence sent.", ocpp_config_comp.charge_point_id, external_id_comp.0);
         }
+    }
+}
+
+/// Pull raw OCPP requests from the channel resource and fire Bevy events.
+pub fn ingest_ocpp_requests_from_channel_system(
+    channel: Res<OcppRequestReceiver>,
+    mut writer: EventWriter<OcppRequestFromChargerEvent>,
+) {
+    loop {
+        match channel.0.try_recv() {
+            Ok(request) => { writer.write(request); }
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Disconnected) => break,
+        }
+    }
+}
+
+/// Drain Bevy‐generated `SendOcppToChargerCommand` events and push them into the channel resource.
+pub fn export_ocpp_commands_to_channel_system(
+    mut reader: EventReader<SendOcppToChargerCommand>,
+    channel: Res<OcppCommandSender>,
+) {
+    for cmd in reader.read() {
+        let _ = channel.0.send(cmd.clone());
     }
 }

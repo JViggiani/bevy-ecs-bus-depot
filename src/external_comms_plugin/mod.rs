@@ -23,10 +23,8 @@ pub struct ExternalMeteringData {
 }
 
 
-pub struct ExternalCommsPlugin {
-    // These channels are now created in main and passed in, or created here and exposed.
-    // For simplicity, let's assume they are created here and corresponding ends stored in resources.
-}
+#[derive(Default)]
+pub struct ExternalCommsPlugin;
 
 impl Plugin for ExternalCommsPlugin {
     fn build(&self, app: &mut App) {

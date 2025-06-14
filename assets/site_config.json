@@ -15,7 +15,8 @@
         { "type": "AssetInfo", "make": "Alfen", "model": "Eve Single Pro-Line" },
         { "type": "ChargerElectricalConfig", "nominal_voltage_ln": 230.0, "active_phase_count": 1 },
         { "type": "OcppProfileBehavior", "rate_unit": "Watts", "profile_phases_in_ocpp_message": 1 },
-        { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } }
+        { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } },
+        { "type": "AlfenSpecificConfig", "default_tx_profile_power_watts": 1500.0 }
       ]
     },
     "Generic_Battery_Template": {
@@ -49,20 +50,28 @@
       "external_id": "CH001",
       "template_id": "Phihong_AC_EU_Charger_Template",
       "instance_components": [
-        { "type": "OcppConfig", "version": "V1_6J", "charge_point_id": "CP_CH001_PHI" }
+        {
+          "type": "OcppConfig",
+          "version": "V1_6J",
+          "charge_point_id": "CH001"
+        }
       ]
     },
     {
       "external_id": "CH002",
       "template_id": "Alfen_AC_EU_Charger_Template",
       "instance_components": [
-        { "type": "OcppConfig", "version": "V1_6J", "charge_point_id": "CP_CH002_ALF" }
+        {
+          "type": "OcppConfig",
+          "version": "V1_6J",
+          "charge_point_id": "CH002"
+        }
       ]
     },
     {
-        "external_id": "BAT001",
-        "template_id": "Generic_Battery_Template",
-        "instance_components": []
+      "external_id": "BAT001",
+      "template_id": "Generic_Battery_Template",
+      "instance_components": []
     }
   ]
 }

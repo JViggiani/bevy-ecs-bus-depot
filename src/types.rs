@@ -48,7 +48,7 @@ pub struct BootNotificationReqPayload {
     pub charge_point_model: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Reflect)]
+#[derive(Debug, Clone, Serialize, Deserialize, Reflect, PartialEq, Eq)]
 #[reflect(Serialize, Deserialize)]
 pub enum RegistrationStatus {
     Accepted,
@@ -190,6 +190,28 @@ pub struct SetChargingProfileConfPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Reflect, Default)]
 #[reflect(Default, Serialize, Deserialize)]
+pub struct ChangeConfigurationReqPayload {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Reflect)]
+#[reflect(Serialize, Deserialize)]
+pub enum ConfigurationStatus {
+    Accepted,
+    Rejected,
+    RebootRequired,
+    NotSupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Reflect)]
+#[reflect(Serialize, Deserialize)]
+pub struct ChangeConfigurationConfPayload {
+    pub status: ConfigurationStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Reflect, Default)]
+#[reflect(Default, Serialize, Deserialize)]
 pub struct RemoteStartTransactionReqPayload {
     #[serde(rename = "connectorId")]
     pub connector_id: Option<u32>,
@@ -207,4 +229,5 @@ pub enum EOutgoingOcppMessage {
     MeterValuesResponse(MeterValuesConfPayload),
     SetChargingProfileRequest(SetChargingProfileReqPayload),
     RemoteStartTransactionRequest(RemoteStartTransactionReqPayload),
+    ChangeConfigurationRequest(ChangeConfigurationReqPayload),
 }

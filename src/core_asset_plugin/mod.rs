@@ -22,12 +22,12 @@ impl Plugin for CoreAssetPlugin {
 }
 
 fn debug_core_assets_system(
-    query: Query<(Entity, &ExternalId, &AssetInfo, &crate::types::EAssetType, &CurrentMeterReading, &TargetPowerSetpointKw), Changed<TargetPowerSetpointKw>>
+    changed_setpoint_asset_query: Query<(Entity, &ExternalId, &AssetInfo, &crate::types::EAssetType, &CurrentMeterReading, &TargetPowerSetpointKw), Changed<TargetPowerSetpointKw>>
 ) {
-    for (entity, ext_id, info, asset_type, meter, setpoint) in query.iter() {
-        info!(
-            "CoreAsset Debug: Entity {:?}, ID: {}, Type: {:?}, Make: {}, Model: {}, Meter: {:?}, New Setpoint: {} kW",
-            entity, ext_id.0, asset_type, info.make, info.model, meter, setpoint.0
+    for (entity_id, external_id_component, asset_info_component, asset_type_component, meter_reading_component, target_setpoint_component) in changed_setpoint_asset_query.iter() {
+        debug!(
+            "Entity {:?}, ID: {}, Type: {:?}, Make: {}, Model: {}, Meter: {:?}, New Setpoint: {} kW",
+            entity_id, external_id_component.0, asset_type_component, asset_info_component.make, asset_info_component.model, meter_reading_component, target_setpoint_component.0
         );
     }
 }

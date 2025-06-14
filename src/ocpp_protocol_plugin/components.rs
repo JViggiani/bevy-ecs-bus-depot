@@ -6,8 +6,8 @@ use chrono::{DateTime, Utc};
 #[derive(Component, Debug, Clone, Reflect, Serialize, Deserialize)]
 #[reflect(Component, Serialize, Deserialize)]
 pub struct OcppConfig {
+    pub charge_point_id: String,
     pub version: EOcppVersion,
-    pub charge_point_id: String, 
 }
 
 #[derive(Component, Debug, Clone, Reflect, Default, Serialize, Deserialize)]
@@ -60,3 +60,34 @@ pub struct Gun {
 #[derive(Component, Debug, Clone, Reflect, Serialize, Deserialize, Default)]
 #[reflect(Component, Serialize, Deserialize, Default)]
 pub struct Guns(pub Vec<Gun>);
+
+#[derive(Component, Debug, Default, Clone, Copy, Reflect, Serialize, Deserialize)]
+#[reflect(Component, Serialize, Deserialize, Default)]
+pub struct AlfenSpecificConfig {
+    pub default_tx_profile_power_watts: f32,
+}
+
+#[derive(Component, Debug, Default, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq, Eq)]
+#[reflect(Component, Serialize, Deserialize, Default)]
+pub enum AlfenSpecialInitState {
+    #[default]
+    Pending,
+    InProgress,
+    Complete,
+}
+
+#[derive(Component, Debug, Default, Clone, Copy, Reflect, Serialize, Deserialize)]
+#[reflect(Component, Serialize, Deserialize, Default)]
+pub struct AlfenSpecialInitStatus(pub AlfenSpecialInitState);
+
+#[derive(Component, Debug, Default, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq, Eq)]
+#[reflect(Component, Serialize, Deserialize, Default)]
+pub enum GenericChargerInitProgress {
+    #[default]
+    Pending,
+    Complete,
+}
+
+#[derive(Component, Debug, Default, Clone, Copy, Reflect, Serialize, Deserialize)]
+#[reflect(Component, Serialize, Deserialize, Default)]
+pub struct GenericChargerInitializationStatus(pub GenericChargerInitProgress);

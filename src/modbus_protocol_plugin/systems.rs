@@ -1,67 +1,67 @@
 use bevy::prelude::*;
-use crate::core_asset_plugin::{ExternalId, CurrentMeterReading, TargetPowerSetpointKw, MeteringSource, MeteringSourceDetails, LastAppliedSetpointKw};
-use super::components::{ModbusControlConfig, ModbusAssetLastPoll};
-use chrono::Utc;
+use crate::core_asset_plugin::{ExternalId, TargetPowerSetpointKw, CurrentMeterReading, MeteringSource, MeteringSourceDetails, LastAppliedSetpointKw};
+use crate::modbus_protocol_plugin::ModbusControlConfig;
+use super::components::ModbusRequest;
+use super::events::{ModbusPollEvent, ModbusRequestChannel, ModbusResponseChannel};
 
-pub fn placeholder_modbus_poll_system(
-    mut commands: Commands,
-    mut query: Query<(Entity, &ExternalId, &mut CurrentMeterReading, &MeteringSource, Option<&mut ModbusAssetLastPoll>)>,
+/// Timer resource that triggers a Modbus poll every 5 sec.
+#[derive(Resource)]
+pub struct ModbusPollTimer(pub Timer);
+
+/// Each time the timer finishes, fire a `ModbusPollEvent`.
+pub fn modbus_poll_timer_system(
     time: Res<Time>,
+    mut timer: ResMut<ModbusPollTimer>,
+    mut poll_event_writer: EventWriter<ModbusPollEvent>,
 ) {
-    let current_time = time.elapsed_secs();
-    for (entity, ext_id, mut meter_reading, metering_source, modbus_last_poll_opt) in query.iter_mut() {
-        if let MeteringSource {
-            source_type: crate::types::EMeteringDataSource::Modbus,
-            details: Some(MeteringSourceDetails::Modbus { ip, port, unit_id, poll_interval_ms, register_map_key })
-        } = metering_source {
-            let mut last_poll_component = match modbus_last_poll_opt {
-                Some(comp) => comp,
-                None => {
-                    commands.entity(entity).insert(ModbusAssetLastPoll(0.0));
-                    continue; 
-                }
-            };
+    if timer.0.tick(time.delta()).just_finished() {
+        poll_event_writer.write(ModbusPollEvent);
+    }
+}
 
-            let interval_seconds = *poll_interval_ms as f32 / 1000.0;
-
-            if current_time - last_poll_component.0 >= interval_seconds {
-                info!("Modbus Poll System: Polling asset ExtID '{}' at IP '{}', Port {}, Unit ID {}.",
-                    ext_id.0, ip, port, unit_id);
-                info!("Modbus Poll System: Using register map key '{}'.", register_map_key);
-
-                if ext_id.0 == "BAT001" {
-                    meter_reading.power_kw += 0.1;
-                    if meter_reading.power_kw > 50.0 { meter_reading.power_kw = -50.0; }
-                    let energy_increment = (meter_reading.power_kw as f64 * (interval_seconds as f64 / 3600.0)).abs();
-                    meter_reading.energy_kwh += energy_increment;
-                } else {
-                     meter_reading.power_kw = 1.23;
-                     meter_reading.energy_kwh += 0.01;
-                }
-                meter_reading.timestamp = Utc::now();
-
-                info!("Modbus Poll System: Simulated data for ExtID '{}'. Updated CurrentMeterReading: Power {:.2} kW, Energy {:.2} kWh.",
-                    ext_id.0, meter_reading.power_kw, meter_reading.energy_kwh);
-
-                last_poll_component.0 = current_time;
+/// On each `ModbusPollEvent`, enqueue a ModbusRequest for every Modbus‐enabled asset.
+pub fn schedule_modbus_requests_on_event(
+    mut poll_reader: EventReader<ModbusPollEvent>,
+    request_channel: Res<ModbusRequestChannel>,
+    query: Query<(&ExternalId, &MeteringSource)>,
+) {
+    for _ in poll_reader.read() {
+        for (id, source) in query.iter() {
+            if let MeteringSource {
+                source_type: crate::types::EMeteringDataSource::Modbus,
+                details: Some(MeteringSourceDetails::Modbus { register_map_key, .. })
+            } = source {
+                let _ = request_channel.0.send(ModbusRequest::new(
+                    id.0.clone(),
+                    register_map_key.clone(),
+                ));
             }
         }
     }
 }
 
-pub fn placeholder_modbus_control_system(
-    mut query: Query<(Entity, &ExternalId, &TargetPowerSetpointKw, &ModbusControlConfig, &mut LastAppliedSetpointKw), Changed<TargetPowerSetpointKw>>,
+/// Process ModbusResponse from channel and update meter readings.
+pub fn process_modbus_responses_system(
+    response_channel: Res<ModbusResponseChannel>,
+    mut query: Query<(&ExternalId, &mut CurrentMeterReading)>,
 ) {
-    for (_entity, ext_id, target_setpoint, modbus_control_cfg, mut last_applied_setpoint) in query.iter_mut() {
-        info!("Modbus Control System: TargetPowerSetpointKw for ExtID '{}' changed to {} kW.",
-            ext_id.0, target_setpoint.0);
-        info!("Modbus Control System: Asset uses ModbusControlConfig: IP '{}', Port {}, Unit ID {}.",
-            modbus_control_cfg.ip, modbus_control_cfg.port, modbus_control_cfg.unit_id);
+    while let Ok(response) = response_channel.0.try_recv() {
+        if let Some((_, mut reading)) = query.iter_mut()
+            .find(|(id, _)| id.0 == response.external_id)
+        {
+            reading.power_kw   = response.power_kw;
+            reading.energy_kwh = response.energy_kwh;
+            reading.timestamp  = response.timestamp;
+        }
+    }
+}
 
-        info!("Modbus Control System: Would write {:.2} kW to appropriate Modbus register for ExtID '{}'.",
-            target_setpoint.0, ext_id.0);
-        
-        last_applied_setpoint.0 = target_setpoint.0;
-        info!("Modbus Control System: Updated LastAppliedSetpointKw for ExtID '{}' to {:.2} kW.", ext_id.0, last_applied_setpoint.0);
+/// Placeholder control system for Modbus‐controlled assets.
+pub fn placeholder_modbus_control_system(
+    mut query: Query<(&ExternalId, &TargetPowerSetpointKw, &ModbusControlConfig, &mut LastAppliedSetpointKw), Changed<TargetPowerSetpointKw>>,
+) {
+    for (id, target, config, mut last) in query.iter_mut() {
+        info!("Modbus Control: {} kW to {}:{} unit {}", target.0, config.ip, config.port, id.0);
+        last.0 = target.0;
     }
 }

@@ -5,8 +5,12 @@ pub mod systems;
 
 pub use components::*;
 pub use events::*;
-pub use systems::*;
-
+pub use systems::{
+    ocpp_request_handler,
+    generic_ocpp_charger_initialization_system,
+    alfen_special_init_system,
+    charger_control_to_ocpp_profile,
+};
 
 pub struct OcppProtocolPlugin;
 
@@ -19,11 +23,18 @@ impl Plugin for OcppProtocolPlugin {
             .register_type::<EGunStatusOcpp>()
             .register_type::<Gun>()
             .register_type::<Guns>()
+            .register_type::<AlfenSpecificConfig>() 
+            .register_type::<AlfenSpecialInitStatus>() 
+            .register_type::<AlfenSpecialInitState>() 
+            .register_type::<GenericChargerInitializationStatus>()
+            .register_type::<GenericChargerInitProgress>()
             .add_event::<OcppRequestFromChargerEvent>()
             .add_event::<SendOcppToChargerCommand>()
             .add_systems(Update, (
-                placeholder_ocpp_request_handler_system,
-                placeholder_charger_control_to_ocpp_profile_system,
-            ).chain());
+                ocpp_request_handler,
+                generic_ocpp_charger_initialization_system.after(ocpp_request_handler),
+                alfen_special_init_system.after(generic_ocpp_charger_initialization_system),
+                charger_control_to_ocpp_profile.after(alfen_special_init_system),
+            ));
     }
 }

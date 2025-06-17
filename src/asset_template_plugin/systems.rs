@@ -1,6 +1,6 @@
 use bevy::prelude::*;
+use super::SiteConfigJson;
 use serde::Deserialize;
-use std::fs;
 use crate::core_asset_plugin::{ExternalId, AssetInfo, CurrentMeterReading, TargetPowerSetpointKw, MeteringSource, LastAppliedSetpointKw};
 use crate::ocpp_protocol_plugin::{OcppConfig, OcppProfileBehavior, ChargerElectricalConfig, Guns, Gun, EGunStatusOcpp, OcppConnectionState, AlfenSpecificConfig, AlfenSpecialInitStatus, GenericChargerInitializationStatus};
 use crate::types::{EAssetType, EOperationalStatus};
@@ -84,20 +84,14 @@ fn apply_component(
 }
 
 /// Reads `assets/site_config.json` and spawns entities with configured components.
-pub fn spawn_assets_from_config_system(mut commands: Commands) {
-    let config_text = match fs::read_to_string("assets/site_config.json") {
-        Ok(text) => text,
-        Err(err) => {
-            error!("Cannot read site_config.json: {}", err);
-            return;
-        }
-    };
-    let site_config: SiteConfig = match serde_json::from_str(&config_text) {
+pub fn spawn_assets_from_config_system(
+    mut commands: Commands,
+    config_json: Res<SiteConfigJson>,
+) {
+    let config_text = &config_json.0;
+    let site_config: SiteConfig = match serde_json::from_str(config_text) {
         Ok(cfg) => cfg,
-        Err(err) => {
-            error!("Invalid JSON in site_config.json: {}", err);
-            return;
-        }
+        Err(err) => { error!("Invalid JSON in site_config.json: {}", err); return; }
     };
 
     for instance in site_config.assets {

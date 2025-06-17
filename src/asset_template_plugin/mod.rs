@@ -3,6 +3,9 @@ pub mod systems;
 
 pub use systems::*;
 
+#[derive(Resource)]
+pub struct SiteConfigJson(pub String);
+
 pub struct AssetTemplatePlugin;
 
 impl Plugin for AssetTemplatePlugin {

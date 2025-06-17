@@ -37,7 +37,9 @@ impl Plugin for OcppProtocolPlugin {
                 ocpp_request_handler,
                 generic_ocpp_charger_initialization_system.after(ocpp_request_handler),
                 alfen_special_init_system.after(generic_ocpp_charger_initialization_system),
-                charger_control_to_ocpp_profile.after(alfen_special_init_system),
+                charger_control_to_ocpp_profile
+                    .after(alfen_special_init_system)
+                    .after(crate::balancer_comms_plugin::apply_incoming_setpoints_system),
             ))
             .add_systems(Update, export_ocpp_commands_to_channel_system);
     }

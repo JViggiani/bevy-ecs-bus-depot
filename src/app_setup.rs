@@ -4,16 +4,17 @@ use crate::core_asset_plugin::CoreAssetPlugin;
 use crate::asset_template_plugin::AssetTemplatePlugin;
 use crate::ocpp_protocol_plugin::{OcppProtocolPlugin, OcppRequestReceiver, OcppCommandSender};
 use crate::modbus_protocol_plugin::{ModbusProtocolPlugin, ModbusRequestChannel, ModbusResponseChannel};
-use crate::external_comms_plugin::{ExternalCommsPlugin, IncomingSetpointChannel, OutgoingMeteringChannel};
+use crate::balancer_comms_plugin::{BalancerCommsPlugin, IncomingSetpointChannel, OutgoingMeteringChannel};
 use crossbeam_channel::{unbounded, Sender, Receiver};
+use crate::asset_template_plugin::SiteConfigJson;
 
 /// External channel ends for production integration or tests.
 pub struct AppExternalChannelEnds {
     // balancer ↔ Bevy
-    pub balancer_setpoint_sender: Sender<crate::external_comms_plugin::ExternalSetpointData>,
-    pub balancer_setpoint_receiver: Receiver<crate::external_comms_plugin::ExternalSetpointData>,
-    pub balancer_metering_sender: Sender<crate::external_comms_plugin::ExternalMeteringData>,
-    pub balancer_metering_receiver: Receiver<crate::external_comms_plugin::ExternalMeteringData>,
+    pub balancer_setpoint_sender: Sender<crate::balancer_comms_plugin::BalancerSetpointData>,
+    pub balancer_setpoint_receiver: Receiver<crate::balancer_comms_plugin::BalancerSetpointData>,
+    pub balancer_metering_sender: Sender<crate::balancer_comms_plugin::BalancerMeteringData>,
+    pub balancer_metering_receiver: Receiver<crate::balancer_comms_plugin::BalancerMeteringData>,
 
     // Modbus ↔ Bevy
     pub modbus_request_sender: Sender<crate::modbus_protocol_plugin::ModbusRequest>,
@@ -28,7 +29,7 @@ pub struct AppExternalChannelEnds {
     pub ocpp_command_receiver: Receiver<crate::ocpp_protocol_plugin::events::SendOcppToChargerCommand>,
 }
 
-pub fn setup_bevy_app() -> (App, AppExternalChannelEnds) {
+pub fn setup_bevy_app(config_json: String) -> (App, AppExternalChannelEnds) {
     let mut app = App::new();
 
     // Balancer channels
@@ -45,12 +46,14 @@ pub fn setup_bevy_app() -> (App, AppExternalChannelEnds) {
     let (ocpp_command_sender, ocpp_command_receiver) =
         unbounded::<crate::ocpp_protocol_plugin::events::SendOcppToChargerCommand>();
 
+    app.insert_resource(SiteConfigJson(config_json));
+
     app.add_plugins(MinimalPlugins)
        .insert_resource(Time::<Fixed>::from_duration(std::time::Duration::from_secs(5)))
        .add_plugins(LogPlugin::default())
        .add_plugins(CoreAssetPlugin)
        .add_plugins(AssetTemplatePlugin)
-       .add_plugins(ExternalCommsPlugin)
+       .add_plugins(BalancerCommsPlugin)
        .add_plugins(ModbusProtocolPlugin)
        .add_plugins(OcppProtocolPlugin)
 

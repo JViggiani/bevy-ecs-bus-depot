@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use ocpp_bevy_poc::app_setup::setup_bevy_app;
-use ocpp_bevy_poc::external_comms_plugin::ExternalSetpointData;
+use ocpp_bevy_poc::balancer_comms_plugin::BalancerSetpointData;
 use ocpp_bevy_poc::ocpp_protocol_plugin::events::{
     OcppRequestFromChargerEvent,
 };
@@ -29,31 +29,60 @@ fn try_recv<T>(rx: &Receiver<T>, timeout: Duration) -> Option<T> {
 fn test_charger_connect_setpoint_update() {
     let asset_external_id = "CH001".to_string();
 
-    // 1. Standard app setup
-    let (mut bevy_app, channels) = setup_bevy_app();
+    // 1. Provide minimal site config
+    let site_config_json = r#"{
+        "asset_templates": {
+            "Phihong_AC_EU_Charger_Template": {
+                "asset_type": "Charger",
+                "components": [
+                    { "type": "AssetInfo", "make": "Phihong", "model": "AC_EU_Dual_V2" },
+                    { "type": "ChargerElectricalConfig", "nominal_voltage_ln": 230.0, "active_phase_count": 3 },
+                    { "type": "OcppProfileBehavior", "rate_unit": "Amps", "profile_phases_in_ocpp_message": 3 },
+                    { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } }
+                ]
+            }
+        },
+        "assets": [
+            {
+                "external_id": "CH001",
+                "template_id": "Phihong_AC_EU_Charger_Template",
+                "instance_components": [
+                    { "type": "OcppConfig", "version": "V1_6J", "charge_point_id": "CH001" }
+                ]
+            }
+        ]
+    }"#.to_string();
 
-    // 2. Grab OCPP and balancer channels
-    let charger_request_sender   = channels.ocpp_request_sender.clone();
-    let command_rx               = &channels.ocpp_command_receiver;
-    let balancer_setpoint_sender = &channels.balancer_setpoint_sender;
+    // 2. Standard app setup with custom config
+    let (mut bevy_app, channels) = setup_bevy_app(site_config_json);
+
+    // 3. Grab OCPP and balancer channels
+    let ocpp_request_sender         = channels.ocpp_request_sender.clone();
+    let ocpp_command_receiver       = &channels.ocpp_command_receiver;
+    let balancer_setpoint_sender    = &channels.balancer_setpoint_sender;
 
     // let the ECS startup systems (asset spawn, init) run once
     bevy_app.update();
 
-    // 3. Simulate BootNotification
+    // 4. Simulate BootNotification
     let boot_notification = BootNotificationReqPayload {
         charge_point_vendor: "TestVendor".into(),
         charge_point_model:  "TestModel".into(),
     };
-    charger_request_sender.send(OcppRequestFromChargerEvent {
+    ocpp_request_sender.send(OcppRequestFromChargerEvent {
         charge_point_id: asset_external_id.clone(),
         action:          "BootNotification".into(),
         payload_json:    serde_json::to_string(&boot_notification).unwrap(),
         ocpp_message_id: "1".into(),
     }).unwrap();
-    bevy_app.update(); bevy_app.update();
 
-    let boot_response = try_recv(command_rx, Duration::from_secs(2)).unwrap();
+    // Update app called twice:
+    //  once to pull from the OcppRequestReceiver and fire the ingest_ocpp_requests_from_channel_system
+    //  again to let ocpp_request_handler respond and export_ocpp_commands_to_channel_system to push the response onto ocpp_command_receiver 
+    bevy_app.update(); 
+    bevy_app.update();
+
+    let boot_response = try_recv(ocpp_command_receiver, Duration::from_secs(2)).unwrap();
     assert_eq!(boot_response.charge_point_id, asset_external_id.clone());
     assert_eq!(boot_response.ocpp_message_id, Some("1".into()));
     if let EOutgoingOcppMessage::BootNotificationResponse(conf) = boot_response.message_type {
@@ -62,62 +91,78 @@ fn test_charger_connect_setpoint_update() {
         panic!("Expected BootNotificationResponse");
     }
 
-    // 4. Drain generic‐init commands
+    // 5. Drain generic‐init commands
     for _ in 0..10 {
-        if try_recv(command_rx, Duration::from_millis(50)).is_none() {
+        if try_recv(ocpp_command_receiver, Duration::from_millis(50)).is_none() {
             break;
         }
     }
 
-    // 5. Simulate StatusNotification
+    // 6. Simulate StatusNotification
     let status_notification = StatusNotificationReqPayload {
         connector_id: 1,
         error_code:   "NoError".into(),
         status:       "Available".into(),
     };
-    charger_request_sender.send(OcppRequestFromChargerEvent {
+    ocpp_request_sender.send(OcppRequestFromChargerEvent {
         charge_point_id: asset_external_id.clone(),
         action:          "StatusNotification".into(),
         payload_json:    serde_json::to_string(&status_notification).unwrap(),
         ocpp_message_id: "2".into(),
     }).unwrap();
+
+    // Similar to before we need to call update twice
     bevy_app.update(); bevy_app.update();
 
-    let status_response = try_recv(command_rx, Duration::from_secs(1)).unwrap();
+    let status_response = try_recv(ocpp_command_receiver, Duration::from_secs(1)).unwrap();
     assert_eq!(status_response.charge_point_id, asset_external_id.clone());
     assert_eq!(status_response.ocpp_message_id, Some("2".into()));
     if !matches!(status_response.message_type, EOutgoingOcppMessage::StatusNotificationResponse(_)) {
         panic!("Expected StatusNotificationResponse");
     }
 
-    // 6. Send 10 kW setpoint
-    balancer_setpoint_sender.send(ExternalSetpointData {
+    // 7. Send 10 kW setpoint
+    balancer_setpoint_sender.send(BalancerSetpointData {
         external_id:     asset_external_id.clone(),
         target_power_kw: 10.0,
     }).unwrap();
-    bevy_app.update(); bevy_app.update();
 
-    let profile10 = try_recv(command_rx, Duration::from_secs(1)).unwrap();
+    // Call update three times to ensure all systems (including export_ocpp_commands_to_channel_system) run
+    bevy_app.update(); bevy_app.update(); bevy_app.update();
+
+    let profile10 = try_recv(ocpp_command_receiver, Duration::from_secs(1));
+    assert!(profile10.is_some(), "Expected SetChargingProfileRequest command, but none was received.");
+
+    let profile10 = profile10.unwrap();
     assert_eq!(profile10.charge_point_id, asset_external_id.clone());
     if let EOutgoingOcppMessage::SetChargingProfileRequest(req) = profile10.message_type {
+        // The profile behavior is configured for "Amps", so we assert the unit is "A"
+        assert_eq!(req.cs_charging_profiles.charging_schedule.charging_rate_unit, "A");
         let limit = req.cs_charging_profiles.charging_schedule.charging_schedule_period[0].limit;
-        assert!((limit - 14.49).abs() < 0.1);
+        // The limit is now in Amps: (10000W) / (230V * 3 phases) = 14.49A
+        assert!((limit - 14.49).abs() < 0.1, "Limit was {}", limit);
     } else {
         panic!("Expected SetChargingProfileRequest for 10 kW");
     }
 
-    // 7. Send 5 kW setpoint
-    balancer_setpoint_sender.send(ExternalSetpointData {
+    // 8. Send 5 kW setpoint
+    balancer_setpoint_sender.send(BalancerSetpointData {
         external_id:     asset_external_id.clone(),
         target_power_kw: 5.0,
     }).unwrap();
-    bevy_app.update(); bevy_app.update();
+    bevy_app.update(); bevy_app.update(); bevy_app.update();
 
-    let profile5 = try_recv(command_rx, Duration::from_secs(1)).unwrap();
+    let profile5 = try_recv(ocpp_command_receiver, Duration::from_secs(1));
+    assert!(profile5.is_some(), "Expected SetChargingProfileRequest command, but none was received.");
+
+    let profile5 = profile5.unwrap();
     assert_eq!(profile5.charge_point_id, asset_external_id);
     if let EOutgoingOcppMessage::SetChargingProfileRequest(req) = profile5.message_type {
+        // The profile behavior is configured for "Amps", so we assert the unit is "A"
+        assert_eq!(req.cs_charging_profiles.charging_schedule.charging_rate_unit, "A");
         let limit = req.cs_charging_profiles.charging_schedule.charging_schedule_period[0].limit;
-        assert!((limit - 7.24).abs() < 0.1);
+        // The limit is now in Amps: (5000W) / (230V * 3 phases) = 7.24A
+        assert!((limit - 7.24).abs() < 0.1, "Limit was {}", limit);
     } else {
         panic!("Expected SetChargingProfileRequest for 5 kW");
     }

@@ -158,16 +158,30 @@ pub fn charger_control_to_ocpp_profile(
     mut command_writer: EventWriter<SendOcppToChargerCommand>,
     mut message_id_counter: Local<u32>,
 ) {
-    for (_external_id, config, _guns, elec_cfg, behavior, target_kw, conn, mut last_kw) in query.iter_mut() {
+    for (external_id, config, _guns, elec_cfg, behavior, target_kw, conn, mut last_kw) in query.iter_mut() {
+        debug!(
+            "Processing charger '{}' with target setpoint: {} kW",
+            external_id.0, target_kw.0
+        );
+
         if target_kw.0 == last_kw.0 || !conn.is_connected {
+            debug!(
+                "Skipping charger '{}' because setpoint is unchanged or charger is not connected.",
+                external_id.0
+            );
             continue;
         }
+
         *message_id_counter += 1;
         let msg_id = format!("sc_{}", *message_id_counter);
         let cp_id = config.charge_point_id.clone();
 
+        // translation from power (kW) to the profile limit (Amps or Watts) 
+        // unit is determined by the `OcppProfileBehavior` component from the asset configuration.
         let limit = match behavior.rate_unit {
             EChargingRateUnit::Amps => {
+                // For Amps, we calculate per-phase current:
+                // Amps = (Power in Watts) / (Voltage * Number of Phases)
                 let per_phase = (target_kw.0 * 1000.0)
                     / (elec_cfg.nominal_voltage_ln * elec_cfg.active_phase_count as f32);
                 per_phase.max(0.0)
@@ -175,38 +189,50 @@ pub fn charger_control_to_ocpp_profile(
             EChargingRateUnit::Watts => (target_kw.0 * 1000.0).max(0.0),
         };
 
+        debug!(
+            "Charger '{}' computed limit: {} {}",
+            external_id.0,
+            limit,
+            if behavior.rate_unit == EChargingRateUnit::Amps { "A" } else { "W" }
+        );
+
         let schedule = ChargingSchedule {
-            duration:              Some(86400),
-            start_schedule:        Some(Utc::now().to_rfc3339()),
-            charging_rate_unit:    if behavior.rate_unit == EChargingRateUnit::Amps { "A" } else { "W" }.to_string(),
+            duration: Some(86400),
+            start_schedule: Some(Utc::now().to_rfc3339()),
+            charging_rate_unit: if behavior.rate_unit == EChargingRateUnit::Amps { "A" } else { "W" }.to_string(),
             charging_schedule_period: vec![ChargingSchedulePeriod {
-                start_period:    0,
+                start_period: 0,
                 limit,
-                number_phases:   Some(behavior.profile_phases_in_ocpp_message),
+                number_phases: Some(behavior.profile_phases_in_ocpp_message),
             }],
-            min_charging_rate:     Some(0.0),
+            min_charging_rate: Some(0.0),
         };
 
         let profiles = CsChargingProfiles {
-            charging_profile_id:    1,
-            transaction_id:         None,
-            stack_level:            1,
+            charging_profile_id: 1,
+            transaction_id: None,
+            stack_level: 1,
             charging_profile_purpose: "TxDefaultProfile".to_string(),
-            charging_profile_kind:  "Absolute".to_string(),
-            recurrency_kind:        Some("Daily".to_string()),
-            valid_from:             Some(Utc::now().to_rfc3339()),
-            valid_to:               Some((Utc::now() + chrono::Duration::days(1)).to_rfc3339()),
-            charging_schedule:      schedule,
+            charging_profile_kind: "Absolute".to_string(),
+            recurrency_kind: Some("Daily".to_string()),
+            valid_from: Some(Utc::now().to_rfc3339()),
+            valid_to: Some((Utc::now() + chrono::Duration::days(1)).to_rfc3339()),
+            charging_schedule: schedule,
         };
 
         command_writer.write(SendOcppToChargerCommand {
             charge_point_id: cp_id.clone(),
-            message_type:    EOutgoingOcppMessage::SetChargingProfileRequest(SetChargingProfileReqPayload {
+            message_type: EOutgoingOcppMessage::SetChargingProfileRequest(SetChargingProfileReqPayload {
                 connector_id: 0,
                 cs_charging_profiles: profiles,
             }),
-            ocpp_message_id: Some(msg_id),
+            ocpp_message_id: Some(msg_id.clone()),
         });
+
+        debug!(
+            "Charger '{}' sent SetChargingProfileRequest with message ID: {}",
+            external_id.0, msg_id
+        );
 
         last_kw.0 = target_kw.0;
     }

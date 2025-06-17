@@ -9,13 +9,13 @@ pub use systems::*;
 
 // Define the data structures that will be sent/received over channels for external communication
 #[derive(Debug, Clone)]
-pub struct ExternalSetpointData {
+pub struct BalancerSetpointData {
     pub external_id: String,
     pub target_power_kw: f32,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExternalMeteringData {
+pub struct BalancerMeteringData {
     pub external_id: String,
     pub power_kw: f32,
     pub energy_kwh: f64,
@@ -24,9 +24,9 @@ pub struct ExternalMeteringData {
 
 
 #[derive(Default)]
-pub struct ExternalCommsPlugin;
+pub struct BalancerCommsPlugin;
 
-impl Plugin for ExternalCommsPlugin {
+impl Plugin for BalancerCommsPlugin {
     fn build(&self, app: &mut App) {
         // Create channels for communication.
         // One pair for setpoints from external balancer INTO Bevy.
@@ -41,13 +41,13 @@ impl Plugin for ExternalCommsPlugin {
                 export_metering_data_to_channel_system,
             ));
 
-        info!("ExternalCommsPlugin loaded.");
+        info!("BalancerCommsPlugin loaded.");
     }
 }
 
 // Resources to hold the channel ends for Bevy systems
 #[derive(Resource)]
-pub struct IncomingSetpointChannel(pub Receiver<ExternalSetpointData>);
+pub struct IncomingSetpointChannel(pub Receiver<BalancerSetpointData>);
 
 #[derive(Resource)]
-pub struct OutgoingMeteringChannel(pub Sender<ExternalMeteringData>);
+pub struct OutgoingMeteringChannel(pub Sender<BalancerMeteringData>);

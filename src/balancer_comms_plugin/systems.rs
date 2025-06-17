@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use super::events::IncomingSetpointEvent;
-use super::{ExternalMeteringData, IncomingSetpointChannel, OutgoingMeteringChannel};
+use super::{BalancerMeteringData, IncomingSetpointChannel, OutgoingMeteringChannel};
 use crate::core_asset_plugin::{ExternalId, TargetPowerSetpointKw, CurrentMeterReading};
 use std::time::SystemTime;
 
@@ -40,7 +40,7 @@ pub fn export_metering_data_to_channel_system(
     outgoing: Res<OutgoingMeteringChannel>,
 ) {
     for (id, reading) in query.iter() {
-        let data = ExternalMeteringData {
+        let data = BalancerMeteringData {
             external_id: id.0.clone(),
             power_kw: reading.power_kw,
             energy_kwh: reading.energy_kwh,

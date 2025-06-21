@@ -7,7 +7,6 @@ pub mod systems;
 pub use events::*;
 pub use systems::*;
 
-// Define the data structures that will be sent/received over channels for external communication
 #[derive(Debug, Clone)]
 pub struct BalancerSetpointData {
     pub external_id: String,
@@ -32,9 +31,7 @@ impl Plugin for BalancerCommsPlugin {
         // One pair for setpoints from external balancer INTO Bevy.
         // One pair for metering data FROM Bevy OUT TO external balancer.
         
-        // The channels (IncomingSetpointChannel & OutgoingMeteringChannel)
-        // are now expected to be inserted as resources before this plugin is added.
-        app.add_event::<IncomingSetpointEvent>() // Bevy internal event
+        app.add_event::<IncomingSetpointEvent>()
             .add_systems(Update, (
                 ingest_setpoints_from_channel_system,
                 apply_incoming_setpoints_system,

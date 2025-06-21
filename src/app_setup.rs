@@ -5,8 +5,10 @@ use crate::asset_template_plugin::AssetTemplatePlugin;
 use crate::ocpp_protocol_plugin::{OcppProtocolPlugin, OcppRequestReceiver, OcppCommandSender};
 use crate::modbus_protocol_plugin::{ModbusProtocolPlugin, ModbusRequestChannel, ModbusResponseChannel};
 use crate::balancer_comms_plugin::{BalancerCommsPlugin, IncomingSetpointChannel, OutgoingMeteringChannel};
+use crate::visualization_plugin::VisualizationPlugin;
 use crossbeam_channel::{unbounded, Sender, Receiver};
 use crate::asset_template_plugin::SiteConfigJson;
+use bevy_egui::EguiPlugin;
 
 /// External channel ends for production integration or tests.
 pub struct AppExternalChannelEnds {
@@ -29,7 +31,12 @@ pub struct AppExternalChannelEnds {
     pub ocpp_command_receiver: Receiver<crate::ocpp_protocol_plugin::events::SendOcppToChargerCommand>,
 }
 
-pub fn setup_bevy_app(config_json: String) -> (App, AppExternalChannelEnds) {
+pub enum AppMode {
+    Visual,
+    Headless,
+}
+
+pub fn setup_bevy_app(config_json: String, mode: AppMode) -> (App, AppExternalChannelEnds) {
     let mut app = App::new();
 
     // Balancer channels
@@ -48,9 +55,29 @@ pub fn setup_bevy_app(config_json: String) -> (App, AppExternalChannelEnds) {
 
     app.insert_resource(SiteConfigJson(config_json));
 
-    app.add_plugins(MinimalPlugins)
-       .insert_resource(Time::<Fixed>::from_duration(std::time::Duration::from_secs(5)))
-       .add_plugins(LogPlugin::default())
+    match mode {
+        AppMode::Visual => {
+            app.add_plugins(DefaultPlugins)
+               .add_plugins(EguiPlugin {
+                   // Using the struct literal as suggested by the compiler for this version.
+                   enable_multipass_for_primary_context: false,
+               })
+               .add_plugins(VisualizationPlugin);
+            
+            // Set up visualization channels for real message sending
+            let viz_channels = crate::visualization_plugin::setup_visualization_channels(
+                balancer_setpoint_sender.clone(),
+                ocpp_request_sender.clone(),
+            );
+            app.insert_resource(viz_channels);
+        }
+        AppMode::Headless => {
+            app.add_plugins(MinimalPlugins)
+               .add_plugins(LogPlugin::default());
+        }
+    }
+
+    app.insert_resource(Time::<Fixed>::from_duration(std::time::Duration::from_secs(5)))
        .add_plugins(CoreAssetPlugin)
        .add_plugins(AssetTemplatePlugin)
        .add_plugins(BalancerCommsPlugin)

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use ocpp_bevy_poc::app_setup::setup_bevy_app;
+use ocpp_bevy_poc::app_setup::{setup_bevy_app, AppMode};
 use ocpp_bevy_poc::balancer_comms_plugin::BalancerSetpointData;
 use ocpp_bevy_poc::ocpp_protocol_plugin::events::{
     OcppRequestFromChargerEvent,
@@ -54,7 +54,7 @@ fn test_charger_connect_setpoint_update() {
     }"#.to_string();
 
     // 2. Standard app setup with custom config
-    let (mut bevy_app, channels) = setup_bevy_app(site_config_json);
+    let (mut bevy_app, channels) = setup_bevy_app(site_config_json, AppMode::Headless);
 
     // 3. Grab OCPP and balancer channels
     let ocpp_request_sender         = channels.ocpp_request_sender.clone();

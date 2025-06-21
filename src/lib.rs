@@ -8,3 +8,4 @@ pub mod ocpp_protocol_plugin;
 pub mod modbus_protocol_plugin;
 pub mod asset_template_plugin;
 pub mod balancer_comms_plugin;
+pub mod visualization_plugin;

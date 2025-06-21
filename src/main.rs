@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use ocpp_bevy_poc::app_setup::setup_bevy_app; 
+use ocpp_bevy_poc::app_setup::{setup_bevy_app, AppMode}; 
 use std::fs;
 
 fn main() {
@@ -7,7 +7,7 @@ fn main() {
 
     let config_json = fs::read_to_string("assets/site_config.json")
         .expect("Failed to read site_config.json");
-    let (mut app, _app_external_channel_ends) = setup_bevy_app(config_json);
+    let (mut app, _app_external_channel_ends) = setup_bevy_app(config_json, AppMode::Visual);
     
     // In a real production app, we would now spawn threads/tasks
     // to manage app_external_channel_ends:

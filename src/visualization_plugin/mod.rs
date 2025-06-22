@@ -1,15 +1,15 @@
 use bevy::prelude::*;
+use bevy::render::camera::{Projection, OrthographicProjection};
 use bevy_egui::{egui, EguiContexts};
-use serde::Deserialize;
-use std::collections::HashMap;
 use crate::core_asset_plugin::{ExternalId, AssetInfo, TargetPowerSetpointKw, CurrentMeterReading};
 use crate::types::EAssetType;
-use crate::balancer_comms_plugin::BalancerSetpointData;
-use crate::ocpp_protocol_plugin::events::OcppRequestFromChargerEvent;
-use crate::modbus_protocol_plugin::ModbusResponse;
+use crate::balancer_comms_plugin::{BalancerSetpointData, BalancerMeteringData};
+use crate::ocpp_protocol_plugin::events::{OcppRequestFromChargerEvent, SendOcppToChargerCommand};
+use crate::modbus_protocol_plugin::{ModbusRequest, ModbusResponse};
 use crate::asset_template_plugin::TotalAssets;
 pub mod log_capture;
 use self::log_capture::LogReceiver;
+use bevy_pancam::{PanCam, PanCamPlugin};
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Position {
@@ -26,25 +26,32 @@ pub struct Orchestrator;
 #[derive(Component)]
 pub struct ConnectionLine;
 
-#[derive(Deserialize)]
-struct VisualizationConfig {
-    positions: HashMap<String, (f32, f32)>,
-}
-
 #[derive(Resource, Default)]
 struct PositionsAttached(bool);
 
 #[derive(Component)]
 pub struct Balancer;
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 struct LogMessages(Vec<String>);
+
+#[derive(Resource, Default)]
+struct OutputMessages {
+    balancer_metering: Vec<String>,
+    ocpp_commands: Vec<String>,
+    modbus_requests: Vec<String>,
+}
 
 #[derive(Resource)]
 pub struct MessageChannels {
+    // Senders for input
     balancer_setpoint_sender: crossbeam_channel::Sender<BalancerSetpointData>,
     ocpp_request_sender: crossbeam_channel::Sender<OcppRequestFromChargerEvent>,
     modbus_response_sender: crossbeam_channel::Sender<ModbusResponse>,
+    // Receivers for output
+    balancer_metering_receiver: crossbeam_channel::Receiver<BalancerMeteringData>,
+    ocpp_command_receiver: crossbeam_channel::Receiver<SendOcppToChargerCommand>,
+    modbus_request_receiver: crossbeam_channel::Receiver<ModbusRequest>,
 }
 
 #[derive(Resource, Default)]
@@ -58,9 +65,11 @@ pub struct VisualizationPlugin;
 impl Plugin for VisualizationPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PositionsAttached(false))
-           .insert_resource(LogMessages(Vec::new()))
+           .insert_resource(LogMessages::default())
+           .insert_resource(OutputMessages::default())
            .insert_resource(SelectedQueue("Balancer Setpoint".to_string()))
            .insert_resource(MessageInput("{\n  \"external_id\": \"CH001\",\n  \"target_power_kw\": 5.0\n}".to_string()))
+           .add_plugins(PanCamPlugin::default())
            .add_systems(Startup, setup_camera)
            .add_systems(Update, (
                attach_positions_system.run_if(positions_not_attached),
@@ -69,7 +78,10 @@ impl Plugin for VisualizationPlugin {
                spawn_balancer_system.run_if(balancer_not_spawned),
                update_asset_colors_system,
                handle_mouse_clicks_system,
+           ))
+           .add_systems(Update, (
                pull_captured_logs_system,
+               pull_output_messages_system,
                ui_system,
            ));
     }
@@ -88,7 +100,21 @@ fn balancer_not_spawned(query: Query<&Balancer>) -> bool {
 }
 
 fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+    // The near and far planes should be set to allow for sprites on different z-levels.
+    let mut projection = OrthographicProjection::default_2d();
+    projection.near = -1000.0;
+    projection.far = 1000.0;
+
+    // Spawn the camera entity with its core components.
+    commands.spawn((
+        Camera::default(),
+        // The Camera2d component tells Bevy to use the 2D render graph.
+        Camera2d::default(),
+        // The projection component, which is needed for zooming.
+        Projection::Orthographic(projection),
+        // Add the PanCam component for panning and zooming.
+        PanCam::default(),
+    ));
 }
 
 fn attach_positions_system(
@@ -232,8 +258,35 @@ fn pull_captured_logs_system(
         while let Ok(msg) = receiver.0.try_recv() {
             log_messages.0.push(msg.trim_end().to_string());
             // Keep the log buffer from growing indefinitely
-            if log_messages.0.len() > 100 {
+            if log_messages.0.len() > 200 {
                 log_messages.0.remove(0);
+            }
+        }
+    }
+}
+
+/// Pulls messages from the output queues and stores them for display.
+fn pull_output_messages_system(
+    mut output_messages: ResMut<OutputMessages>,
+    channels: Option<Res<MessageChannels>>,
+) {
+    if let Some(channels) = channels {
+        while let Ok(msg) = channels.balancer_metering_receiver.try_recv() {
+            output_messages.balancer_metering.push(format!("{:?}", msg));
+            if output_messages.balancer_metering.len() > 50 {
+                output_messages.balancer_metering.remove(0);
+            }
+        }
+        while let Ok(msg) = channels.ocpp_command_receiver.try_recv() {
+            output_messages.ocpp_commands.push(format!("{:?}", msg));
+            if output_messages.ocpp_commands.len() > 50 {
+                output_messages.ocpp_commands.remove(0);
+            }
+        }
+        while let Ok(msg) = channels.modbus_request_receiver.try_recv() {
+            output_messages.modbus_requests.push(format!("{:?}", msg));
+            if output_messages.modbus_requests.len() > 50 {
+                output_messages.modbus_requests.remove(0);
             }
         }
     }
@@ -244,12 +297,14 @@ fn ui_system(
     mut selected_queue: ResMut<SelectedQueue>,
     mut message_input: ResMut<MessageInput>,
     log_messages: Res<LogMessages>,
+    output_messages: Res<OutputMessages>,
     channels: Option<Res<MessageChannels>>,
 ) {
-    egui::SidePanel::right("message_interface")
-        .default_width(400.0)
+    // --- Left Panel (Input) ---
+    egui::SidePanel::left("message_interface")
+        .default_width(350.0)
         .show(contexts.ctx_mut(), |ui| {
-            ui.heading("Message Interface");
+            ui.heading("Message Input");
             ui.separator();
 
             ui.label("Select Queue:");
@@ -266,7 +321,7 @@ fn ui_system(
                 message_input.0 = match selected_queue.0.as_str() {
                     "Balancer Setpoint" => "{\n  \"external_id\": \"CH001\",\n  \"target_power_kw\": 5.0\n}".to_string(),
                     "OCPP Request" => "{\n  \"charge_point_id\": \"CH001\",\n  \"action\": \"MeterValues\",\n  \"payload_json\": \"{\\\"connectorId\\\":1,\\\"meterValue\\\":[{\\\"sampledValue\\\":[{\\\"value\\\":\\\"5000\\\",\\\"measurand\\\":\\\"Power.Active.Import\\\",\\\"unit\\\":\\\"W\\\"}]}]}\"\n}".to_string(),
-                    "Modbus Response" => "{\n  \"external_id\": \"CH001\",\n  \"power_kw\": 5.0,\n  \"energy_kwh\": 1234.5\n}".to_string(),
+                    "Modbus Response" => "{\n  \"external_id\": \"BAT001\",\n  \"power_kw\": 5.0,\n  \"energy_kwh\": 1234.5\n}".to_string(),
                     _ => "{}".to_string(),
                 };
             }
@@ -276,7 +331,7 @@ fn ui_system(
             ui.add(egui::TextEdit::multiline(&mut message_input.0)
                 .font(egui::TextStyle::Monospace)
                 .code_editor()
-                .desired_rows(8)
+                .desired_rows(10)
                 .desired_width(f32::INFINITY)
             );
 
@@ -284,11 +339,37 @@ fn ui_system(
             if ui.button("Send Message").clicked() {
                 send_message(&selected_queue.0, &message_input.0, channels.as_deref());
             }
+        });
 
-            ui.add_space(20.0);
+    // --- Right Panel (Output) ---
+    egui::SidePanel::right("output_queues")
+        .default_width(450.0)
+        .show(contexts.ctx_mut(), |ui| {
+            ui.heading("Output Queues");
             ui.separator();
-            ui.heading("Application Logs");
 
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.collapsing("Balancer Metering", |ui| {
+                    ui.label(output_messages.balancer_metering.join("\n"));
+                });
+                ui.separator();
+                ui.collapsing("OCPP Commands", |ui| {
+                    ui.label(output_messages.ocpp_commands.join("\n"));
+                });
+                ui.separator();
+                ui.collapsing("Modbus Requests", |ui| {
+                    ui.label(output_messages.modbus_requests.join("\n"));
+                });
+            });
+        });
+
+    // --- Bottom Panel (Logs) ---
+    egui::TopBottomPanel::bottom("application_logs")
+        .resizable(true)
+        .default_height(200.0)
+        .show(contexts.ctx_mut(), |ui| {
+            ui.heading("Application Logs");
+            ui.separator();
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .stick_to_bottom(true)
@@ -465,13 +546,19 @@ fn handle_mouse_clicks_system(
 }
 
 pub fn setup_visualization_channels(
-    balancer_sender: crossbeam_channel::Sender<BalancerSetpointData>,
+    balancer_setpoint_sender: crossbeam_channel::Sender<BalancerSetpointData>,
     ocpp_request_sender: crossbeam_channel::Sender<OcppRequestFromChargerEvent>,
     modbus_response_sender: crossbeam_channel::Sender<ModbusResponse>,
+    balancer_metering_receiver: crossbeam_channel::Receiver<BalancerMeteringData>,
+    ocpp_command_receiver: crossbeam_channel::Receiver<SendOcppToChargerCommand>,
+    modbus_request_receiver: crossbeam_channel::Receiver<ModbusRequest>,
 ) -> MessageChannels {
     MessageChannels {
-        balancer_setpoint_sender: balancer_sender,
+        balancer_setpoint_sender,
         ocpp_request_sender,
         modbus_response_sender,
+        balancer_metering_receiver,
+        ocpp_command_receiver,
+        modbus_request_receiver,
     }
 }

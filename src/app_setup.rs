@@ -75,6 +75,9 @@ pub fn setup_bevy_app(
                 balancer_setpoint_sender.clone(),
                 ocpp_request_sender.clone(),
                 modbus_response_sender.clone(),
+                balancer_metering_receiver.clone(),
+                ocpp_command_receiver.clone(),
+                modbus_request_receiver.clone(),
             );
             app.insert_resource(viz_channels);
             if let Some(receiver) = log_receiver {

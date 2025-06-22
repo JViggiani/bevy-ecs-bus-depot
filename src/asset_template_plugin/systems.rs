@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use super::SiteConfigJson;
+use super::{SiteConfigJson, TotalAssets};
 use serde::Deserialize;
 use crate::core_asset_plugin::{ExternalId, AssetInfo, CurrentMeterReading, TargetPowerSetpointKw, MeteringSource, LastAppliedSetpointKw};
 use crate::ocpp_protocol_plugin::{OcppConfig, OcppProfileBehavior, ChargerElectricalConfig, Guns, Gun, EGunStatusOcpp, OcppConnectionState, AlfenSpecificConfig, AlfenSpecialInitStatus, GenericChargerInitializationStatus};
@@ -93,6 +93,8 @@ pub fn spawn_assets_from_config_system(
         Ok(cfg) => cfg,
         Err(err) => { error!("Invalid JSON in site_config.json: {}", err); return; }
     };
+
+    commands.insert_resource(TotalAssets(site_config.assets.len()));
 
     for instance in site_config.assets {
         let template = match site_config.asset_templates.get(&instance.template_id) {

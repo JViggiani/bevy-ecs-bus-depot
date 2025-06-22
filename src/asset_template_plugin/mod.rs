@@ -6,6 +6,9 @@ pub use systems::*;
 #[derive(Resource)]
 pub struct SiteConfigJson(pub String);
 
+#[derive(Resource)]
+pub struct TotalAssets(pub usize);
+
 pub struct AssetTemplatePlugin;
 
 impl Plugin for AssetTemplatePlugin {

@@ -9,6 +9,10 @@ use crate::visualization_plugin::VisualizationPlugin;
 use crossbeam_channel::{unbounded, Sender, Receiver};
 use crate::asset_template_plugin::SiteConfigJson;
 use bevy_egui::EguiPlugin;
+use crate::visualization_plugin::log_capture::LogReceiver;
+use crate::balancer_comms_plugin::{BalancerSetpointData, BalancerMeteringData};
+use crate::modbus_protocol_plugin::{ModbusRequest, ModbusResponse};
+use crate::ocpp_protocol_plugin::events::{OcppRequestFromChargerEvent, SendOcppToChargerCommand};
 
 /// External channel ends for production integration or tests.
 pub struct AppExternalChannelEnds {
@@ -31,49 +35,55 @@ pub struct AppExternalChannelEnds {
     pub ocpp_command_receiver: Receiver<crate::ocpp_protocol_plugin::events::SendOcppToChargerCommand>,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum AppMode {
     Visual,
     Headless,
 }
 
-pub fn setup_bevy_app(config_json: String, mode: AppMode) -> (App, AppExternalChannelEnds) {
+pub fn setup_bevy_app(
+    config_json: String,
+    mode: AppMode,
+    log_receiver: Option<Receiver<String>>,
+) -> (App, AppExternalChannelEnds) {
     let mut app = App::new();
 
     // Balancer channels
-    let (balancer_setpoint_sender, balancer_setpoint_receiver) = unbounded();
-    let (balancer_metering_sender, balancer_metering_receiver) = unbounded();
+    let (balancer_setpoint_sender, balancer_setpoint_receiver) = unbounded::<BalancerSetpointData>();
+    let (balancer_metering_sender, balancer_metering_receiver) = unbounded::<BalancerMeteringData>();
 
     // Modbus channels
-    let (modbus_request_sender, modbus_request_receiver) = unbounded();
-    let (modbus_response_sender, modbus_response_receiver) = unbounded();
+    let (modbus_request_sender, modbus_request_receiver) = unbounded::<ModbusRequest>();
+    let (modbus_response_sender, modbus_response_receiver) = unbounded::<ModbusResponse>();
 
     // OCPP channels
-    let (ocpp_request_sender, ocpp_request_receiver) =
-        unbounded::<crate::ocpp_protocol_plugin::events::OcppRequestFromChargerEvent>();
-    let (ocpp_command_sender, ocpp_command_receiver) =
-        unbounded::<crate::ocpp_protocol_plugin::events::SendOcppToChargerCommand>();
+    let (ocpp_request_sender, ocpp_request_receiver) = unbounded::<OcppRequestFromChargerEvent>();
+    let (ocpp_command_sender, ocpp_command_receiver) = unbounded::<SendOcppToChargerCommand>();
 
     app.insert_resource(SiteConfigJson(config_json));
 
     match mode {
         AppMode::Visual => {
-            app.add_plugins(DefaultPlugins)
-               .add_plugins(EguiPlugin {
-                   // Using the struct literal as suggested by the compiler for this version.
+            // In visual mode, we use Egui for UI which requires it's own logger, and so we disable the default log plugin.
+            app.add_plugins(DefaultPlugins.build().disable::<LogPlugin>());
+            app.add_plugins(EguiPlugin {
                    enable_multipass_for_primary_context: false,
                })
                .add_plugins(VisualizationPlugin);
             
-            // Set up visualization channels for real message sending
             let viz_channels = crate::visualization_plugin::setup_visualization_channels(
                 balancer_setpoint_sender.clone(),
                 ocpp_request_sender.clone(),
+                modbus_response_sender.clone(),
             );
             app.insert_resource(viz_channels);
+            if let Some(receiver) = log_receiver {
+                app.insert_resource(LogReceiver(receiver));
+            }
         }
         AppMode::Headless => {
-            app.add_plugins(MinimalPlugins)
-               .add_plugins(LogPlugin::default());
+            // Headless mode uses the standard LogPlugin.
+            app.add_plugins(MinimalPlugins);
         }
     }
 

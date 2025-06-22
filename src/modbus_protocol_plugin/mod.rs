@@ -11,13 +11,7 @@ pub struct ModbusProtocolPlugin;
 
 impl Plugin for ModbusProtocolPlugin {
     fn build(&self, app: &mut App) {
-        let (request_tx, _request_rx)   = crossbeam_channel::unbounded::<components::ModbusRequest>();
-        let (_response_tx, response_rx) = crossbeam_channel::unbounded::<components::ModbusResponse>();
-
-        app.insert_resource(events::ModbusRequestChannel(request_tx))
-           .insert_resource(events::ModbusResponseChannel(response_rx))
-
-           .register_type::<ModbusControlConfig>()
+        app.register_type::<ModbusControlConfig>()
            .register_type::<ModbusAssetLastPoll>()
 
            // Poll timer fires every 5 seconds

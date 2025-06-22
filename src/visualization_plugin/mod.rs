@@ -6,6 +6,10 @@ use crate::core_asset_plugin::{ExternalId, AssetInfo, TargetPowerSetpointKw, Cur
 use crate::types::EAssetType;
 use crate::balancer_comms_plugin::BalancerSetpointData;
 use crate::ocpp_protocol_plugin::events::OcppRequestFromChargerEvent;
+use crate::modbus_protocol_plugin::ModbusResponse;
+use crate::asset_template_plugin::TotalAssets;
+pub mod log_capture;
+use self::log_capture::LogReceiver;
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Position {
@@ -40,6 +44,7 @@ struct LogMessages(Vec<String>);
 pub struct MessageChannels {
     balancer_setpoint_sender: crossbeam_channel::Sender<BalancerSetpointData>,
     ocpp_request_sender: crossbeam_channel::Sender<OcppRequestFromChargerEvent>,
+    modbus_response_sender: crossbeam_channel::Sender<ModbusResponse>,
 }
 
 #[derive(Resource, Default)]
@@ -64,7 +69,7 @@ impl Plugin for VisualizationPlugin {
                spawn_balancer_system.run_if(balancer_not_spawned),
                update_asset_colors_system,
                handle_mouse_clicks_system,
-               capture_application_logs_system,
+               pull_captured_logs_system,
                ui_system,
            ));
     }
@@ -89,31 +94,22 @@ fn setup_camera(mut commands: Commands) {
 fn attach_positions_system(
     mut commands: Commands,
     mut attached: ResMut<PositionsAttached>,
-    query: Query<(Entity, &ExternalId), Without<Position>>,
+    query: Query<Entity, (With<ExternalId>, Without<Position>)>,
 ) {
-    let config_str = std::fs::read_to_string("assets/site_visualization.json").unwrap_or_default();
-    if config_str.is_empty() {
-        warn!("No visualization config found at assets/site_visualization.json");
+    let assets: Vec<Entity> = query.iter().collect();
+    let asset_count = assets.len();
+    if asset_count == 0 {
         return;
     }
-    
-    let config: VisualizationConfig = serde_json::from_str(&config_str)
-        .unwrap_or_else(|e| {
-            error!("Failed to parse visualization config: {}", e);
-            VisualizationConfig { positions: HashMap::new() }
-        });
 
-    info!("Loaded {} position configurations", config.positions.len());
-    info!("Found {} entities without Position component", query.iter().count());
-    
-    for (entity, ext_id) in query.iter() {
-        info!("Processing entity {:?} with external_id '{}'", entity, ext_id.0);
-        if let Some(&(x, y)) = config.positions.get(&ext_id.0) {
-            commands.entity(entity).insert(Position { x, y });
-            info!("Added position ({}, {}) to asset '{}'", x, y, ext_id.0);
-        } else {
-            warn!("No position found for asset '{}'", ext_id.0);
-        }
+    let spacing = 250.0;
+    let total_width = (asset_count as f32 - 1.0) * spacing;
+    let start_x = -total_width / 2.0;
+
+    for (i, entity) in assets.into_iter().enumerate() {
+        let x = start_x + i as f32 * spacing;
+        let y = -250.0; // Position assets at the bottom
+        commands.entity(entity).insert(Position { x, y });
     }
     
     // Mark as attached so this system doesn't run again
@@ -161,8 +157,9 @@ fn spawn_asset_visuals_system(
 fn spawn_orchestrator_system(
     mut commands: Commands,
     asset_query: Query<&Position, With<Visualized>>,
+    total_assets: Res<TotalAssets>,
 ) {
-    if asset_query.iter().count() < 3 {
+    if asset_query.iter().count() < total_assets.0 {
         return; // Wait for all assets to be visualized
     }
 
@@ -175,7 +172,7 @@ fn spawn_orchestrator_system(
 
     // Add orchestrator label
     commands.spawn((
-        Text2d::new("Site Controller\nOrchestrator"),
+        Text2d::new("Orchestrator"),
         TextFont {
             font_size: 14.0,
             ..default()
@@ -204,7 +201,7 @@ fn spawn_balancer_system(
     // Spawn balancer above orchestrator
     commands.spawn((
         Sprite::from_color(Color::srgb(0.9, 0.5, 0.1), Vec2::new(50.0, 50.0)),
-        Transform::from_xyz(0.0, 200.0, 0.0),
+        Transform::from_xyz(0.0, 150.0, 0.0),
         Balancer,
     ));
 
@@ -216,21 +213,37 @@ fn spawn_balancer_system(
             ..default()
         },
         TextColor(Color::WHITE),
-        Transform::from_xyz(0.0, 230.0, 1.0),
+        Transform::from_xyz(0.0, 180.0, 1.0),
         AssetLabel,
     ));
 
     // Draw connection line from balancer to orchestrator
-    spawn_connection_line(&mut commands, Vec3::new(0.0, 200.0, 0.0), Vec3::ZERO);
+    spawn_connection_line(&mut commands, Vec3::new(0.0, 150.0, 0.0), Vec3::ZERO);
 
     info!("Spawned balancer");
+}
+
+/// Pulls captured logs from the receiver channel and adds them to the display buffer.
+fn pull_captured_logs_system(
+    mut log_messages: ResMut<LogMessages>,
+    log_receiver: Option<Res<LogReceiver>>,
+) {
+    if let Some(receiver) = log_receiver {
+        while let Ok(msg) = receiver.0.try_recv() {
+            log_messages.0.push(msg.trim_end().to_string());
+            // Keep the log buffer from growing indefinitely
+            if log_messages.0.len() > 100 {
+                log_messages.0.remove(0);
+            }
+        }
+    }
 }
 
 fn ui_system(
     mut contexts: EguiContexts,
     mut selected_queue: ResMut<SelectedQueue>,
     mut message_input: ResMut<MessageInput>,
-    mut log_messages: ResMut<LogMessages>,
+    log_messages: Res<LogMessages>,
     channels: Option<Res<MessageChannels>>,
 ) {
     egui::SidePanel::right("message_interface")
@@ -246,16 +259,16 @@ fn ui_system(
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut selected_queue.0, "Balancer Setpoint".to_string(), "Balancer Setpoint");
                     ui.selectable_value(&mut selected_queue.0, "OCPP Request".to_string(), "OCPP Request");
-                    ui.selectable_value(&mut selected_queue.0, "OCPP Command".to_string(), "OCPP Command");
+                    ui.selectable_value(&mut selected_queue.0, "Modbus Response".to_string(), "Modbus Response");
                 });
 
             if selected_queue.is_changed() {
                 message_input.0 = match selected_queue.0.as_str() {
                     "Balancer Setpoint" => "{\n  \"external_id\": \"CH001\",\n  \"target_power_kw\": 5.0\n}".to_string(),
-                    "OCPP Request" => "{\n  \"charge_point_id\": \"CH001\",\n  \"action\": \"StatusNotification\",\n  \"payload_json\": \"{}\"\n}".to_string(),
-                    _ => "{\n  \"charge_point_id\": \"CH001\",\n  \"message_type\": \"SetChargingProfile\"\n}".to_string(),
+                    "OCPP Request" => "{\n  \"charge_point_id\": \"CH001\",\n  \"action\": \"MeterValues\",\n  \"payload_json\": \"{\\\"connectorId\\\":1,\\\"meterValue\\\":[{\\\"sampledValue\\\":[{\\\"value\\\":\\\"5000\\\",\\\"measurand\\\":\\\"Power.Active.Import\\\",\\\"unit\\\":\\\"W\\\"}]}]}\"\n}".to_string(),
+                    "Modbus Response" => "{\n  \"external_id\": \"CH001\",\n  \"power_kw\": 5.0,\n  \"energy_kwh\": 1234.5\n}".to_string(),
+                    _ => "{}".to_string(),
                 };
-                log_messages.0.push(format!("Selected queue: {}", selected_queue.0));
             }
 
             ui.add_space(10.0);
@@ -269,7 +282,7 @@ fn ui_system(
 
             ui.add_space(10.0);
             if ui.button("Send Message").clicked() {
-                send_message(&selected_queue.0, &message_input.0, &mut log_messages, channels.as_deref());
+                send_message(&selected_queue.0, &message_input.0, channels.as_deref());
             }
 
             ui.add_space(20.0);
@@ -289,7 +302,6 @@ fn ui_system(
 fn send_message(
     queue: &str,
     message: &str,
-    log_messages: &mut ResMut<LogMessages>,
     channels: Option<&MessageChannels>,
 ) {
     match queue {
@@ -306,18 +318,18 @@ fn send_message(
                     
                     if let Some(channels) = channels {
                         if let Err(e) = channels.balancer_setpoint_sender.send(setpoint) {
-                            log_messages.0.push(format!("Failed to send setpoint: {}", e));
+                            error!("Failed to send setpoint: {}", e);
                         } else {
-                            log_messages.0.push(format!("✓ Sent setpoint: {} -> {}kW", external_id, target_power));
+                            info!("Sent setpoint: {} -> {}kW", external_id, target_power);
                         }
                     } else {
-                        log_messages.0.push("⚠ Channels not available - simulation mode".to_string());
+                        warn!("Channels not available - simulation mode");
                     }
                 } else {
-                    log_messages.0.push("✗ Invalid setpoint JSON format".to_string());
+                    error!("Invalid setpoint JSON format");
                 }
             } else {
-                log_messages.0.push("✗ Invalid JSON format".to_string());
+                error!("Invalid JSON format");
             }
         }
         "OCPP Request" => {
@@ -336,65 +348,51 @@ fn send_message(
                     
                     if let Some(channels) = channels {
                         if let Err(e) = channels.ocpp_request_sender.send(request) {
-                            log_messages.0.push(format!("Failed to send OCPP request: {}", e));
+                            error!("Failed to send OCPP request: {}", e);
                         } else {
-                            log_messages.0.push(format!("✓ Sent OCPP {} to {}", action, cp_id));
+                            info!("Sent OCPP {} to {}", action, cp_id);
                         }
                     } else {
-                        log_messages.0.push("⚠ Channels not available - simulation mode".to_string());
+                        warn!("Channels not available - simulation mode");
                     }
                 } else {
-                    log_messages.0.push("✗ Invalid OCPP request format".to_string());
+                    error!("Invalid OCPP request format");
                 }
             } else {
-                log_messages.0.push("✗ Invalid JSON format".to_string());
+                error!("Invalid JSON format");
+            }
+        }
+        "Modbus Response" => {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(message) {
+                if let (Some(external_id), Some(power_kw), Some(energy_kwh)) = (
+                    data.get("external_id").and_then(|v| v.as_str()),
+                    data.get("power_kw").and_then(|v| v.as_f64()),
+                    data.get("energy_kwh").and_then(|v| v.as_f64()),
+                ) {
+                    let response = ModbusResponse::new(
+                        external_id.to_string(),
+                        power_kw as f32,
+                        energy_kwh,
+                        chrono::Utc::now(),
+                    );
+                    if let Some(channels) = channels {
+                        if let Err(e) = channels.modbus_response_sender.send(response) {
+                            error!("Failed to send Modbus response: {}", e);
+                        } else {
+                            info!("Sent Modbus response for {}", external_id);
+                        }
+                    } else {
+                        warn!("Channels not available - simulation mode");
+                    }
+                } else {
+                    error!("Invalid Modbus response JSON format");
+                }
+            } else {
+                error!("Invalid JSON format");
             }
         }
         _ => {
-            log_messages.0.push(format!("⚠ Queue '{}' not yet implemented", queue));
-        }
-    }
-}
-
-fn capture_application_logs_system(
-    mut log_messages: ResMut<LogMessages>,
-    time: Res<Time>,
-    mut last_capture: Local<f32>,
-    mut heartbeat_counter: Local<u32>,
-    // Query for asset activity to create more interesting logs
-    asset_query: Query<(&ExternalId, &TargetPowerSetpointKw, &CurrentMeterReading)>,
-) {
-    // Capture logs every 3 seconds to avoid flooding
-    if time.elapsed_secs() - *last_capture > 3.0 {
-        *last_capture = time.elapsed_secs();
-        *heartbeat_counter += 1;
-        
-        // Limit log growth
-        if log_messages.0.len() > 50 {
-            log_messages.0.drain(0..10); // Remove oldest 10 entries
-        }
-        
-        // Add varied application events
-        match *heartbeat_counter % 4 {
-            0 => {
-                let active_assets = asset_query.iter().count();
-                log_messages.0.push(format!("System heartbeat #{} - {} assets active", *heartbeat_counter, active_assets));
-            }
-            1 => {
-                // Show asset status
-                for (id, setpoint, reading) in asset_query.iter().take(1) {
-                    if setpoint.0 > 0.0 || reading.power_kw > 0.0 {
-                        log_messages.0.push(format!("Asset {}: {}kW setpoint, {}kW actual", id.0, setpoint.0, reading.power_kw));
-                    }
-                }
-            }
-            2 => {
-                log_messages.0.push("Checking external connections...".to_string());
-            }
-            3 => {
-                log_messages.0.push("Processing queued messages...".to_string());
-            }
-            _ => {}
+            warn!("Queue '{}' is invalid", queue);
         }
     }
 }
@@ -469,9 +467,11 @@ fn handle_mouse_clicks_system(
 pub fn setup_visualization_channels(
     balancer_sender: crossbeam_channel::Sender<BalancerSetpointData>,
     ocpp_request_sender: crossbeam_channel::Sender<OcppRequestFromChargerEvent>,
+    modbus_response_sender: crossbeam_channel::Sender<ModbusResponse>,
 ) -> MessageChannels {
     MessageChannels {
         balancer_setpoint_sender: balancer_sender,
         ocpp_request_sender,
+        modbus_response_sender,
     }
 }

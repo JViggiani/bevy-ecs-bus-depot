@@ -1,13 +1,26 @@
 use bevy::prelude::*;
-use ocpp_bevy_poc::app_setup::{setup_bevy_app, AppMode}; 
+use ocpp_bevy_poc::app_setup::{setup_bevy_app, AppMode};
+use ocpp_bevy_poc::visualization_plugin::log_capture;
 use std::fs;
+use tracing_subscriber;
 
 fn main() {
+    let app_mode = AppMode::Visual;
+
+    // Conditionally set up logging. Visual mode gets a channel so we can forward to the UI.
+    // Headless mode gets a standard console logger.
+    let log_receiver = if app_mode == AppMode::Visual {
+        Some(log_capture::setup_logging())
+    } else {
+        tracing_subscriber::fmt().init();
+        None
+    };
+
     info!("Starting Site Controller ECS POC...");
 
     let config_json = fs::read_to_string("assets/site_config.json")
         .expect("Failed to read site_config.json");
-    let (mut app, _app_external_channel_ends) = setup_bevy_app(config_json, AppMode::Visual);
+    let (mut app, _app_external_channel_ends) = setup_bevy_app(config_json, app_mode, log_receiver);
     
     // In a real production app, we would now spawn threads/tasks
     // to manage app_external_channel_ends:

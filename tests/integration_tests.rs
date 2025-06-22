@@ -54,7 +54,7 @@ fn test_charger_connect_setpoint_update() {
     }"#.to_string();
 
     // 2. Standard app setup with custom config
-    let (mut bevy_app, channels) = setup_bevy_app(site_config_json, AppMode::Headless);
+    let (mut bevy_app, channels) = setup_bevy_app(site_config_json, AppMode::Headless, None);
 
     // 3. Grab OCPP and balancer channels
     let ocpp_request_sender         = channels.ocpp_request_sender.clone();

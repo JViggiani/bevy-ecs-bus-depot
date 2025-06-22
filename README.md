@@ -72,6 +72,30 @@ In the sitecontroller, each asset (charger, battery, etc.) is managed by a dedic
 
 ---
 
+## Running the Application
+
+This application can be run in two modes: visual and headless.
+
+### Visual Mode (Default)
+
+Run the application with a graphical user interface for visualization and interaction. This is the default mode.
+
+```sh
+cargo run
+```
+
+This will launch a window showing the assets, their connections, and UI panels for sending messages and viewing logs.
+
+### Headless Mode
+
+Run the application without any graphical output, suitable for server environments.
+
+```sh
+cargo run -- --headless
+```
+
+---
+
 ## Example Implementations and Features
 
 ### Alfen Startup Logic
@@ -93,7 +117,6 @@ Assets and their templates are defined in a JSON config file (`assets/site_confi
 ### Prerequisites
 
 - Rust toolchain (1.70+ recommended)
-- [Bevy](https://bevyengine.org/) (added as a dependency)
 - No external services required; all communication is in-memory
 
 ### Steps

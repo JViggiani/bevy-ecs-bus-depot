@@ -1,11 +1,18 @@
 use bevy::prelude::*;
 use ocpp_bevy_poc::app_setup::{setup_bevy_app, AppMode};
 use ocpp_bevy_poc::visualization_plugin::log_capture;
+use std::env;
 use std::fs;
 use tracing_subscriber;
 
 fn main() {
-    let app_mode = AppMode::Visual;
+    // Determine app mode from command-line arguments.
+    // Default to Visual mode if no "--headless" flag is provided.
+    let app_mode = if env::args().any(|arg| arg == "--headless") {
+        AppMode::Headless
+    } else {
+        AppMode::Visual
+    };
 
     // Conditionally set up logging. Visual mode gets a channel so we can forward to the UI.
     // Headless mode gets a standard console logger.

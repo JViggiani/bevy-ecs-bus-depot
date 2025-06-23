@@ -1,10 +1,10 @@
 use bevy::prelude::*;
-use super::events::{OcppRequestFromChargerEvent, SendOcppToChargerCommand};
+use super::events::{OcppRequestFromAsset, OcppCommandToAsset};
 use super::components::*;
 use crate::core_asset_plugin::{TargetPowerSetpointKw, CurrentMeterReading, MeteringSource, ExternalId, LastAppliedSetpointKw};
 use crate::types::*;
 use chrono::Utc;
-use crate::ocpp_protocol_plugin::events::{OcppRequestReceiver, OcppCommandSender};
+use crate::ocpp_protocol_plugin::events::{OcppFromAssetChannel, OcppToAssetChannel};
 use crossbeam_channel::TryRecvError;
 
 /// Translate OCPP status string to internal enum.
@@ -28,8 +28,8 @@ fn map_status_to_gun_status(status: &str) -> EGunStatusOcpp {
 
 /// Handle incoming OCPP requests (BootNotification, StatusNotification, MeterValues).
 pub fn ocpp_request_handler(
-    mut event_reader: EventReader<OcppRequestFromChargerEvent>,
-    mut command_writer: EventWriter<SendOcppToChargerCommand>,
+    mut event_reader: EventReader<OcppRequestFromAsset>,
+    mut command_writer: EventWriter<OcppCommandToAsset>,
     mut charger_query: Query<(
         Entity,
         &ExternalId,
@@ -64,7 +64,7 @@ pub fn ocpp_request_handler(
                             interval:     300,
                             status:       RegistrationStatus::Accepted,
                         };
-                        command_writer.write(SendOcppToChargerCommand {
+                        command_writer.write(OcppCommandToAsset {
                             charge_point_id: cp_id.clone(),
                             message_type:    EOutgoingOcppMessage::BootNotificationResponse(response),
                             ocpp_message_id: Some(request.ocpp_message_id.clone()),
@@ -93,7 +93,7 @@ pub fn ocpp_request_handler(
                             warn!("Unknown connector {}", payload.connector_id);
                         }
 
-                        command_writer.write(SendOcppToChargerCommand {
+                        command_writer.write(OcppCommandToAsset {
                             charge_point_id: cp_id.clone(),
                             message_type:    EOutgoingOcppMessage::StatusNotificationResponse(StatusNotificationConfPayload {}),
                             ocpp_message_id: Some(request.ocpp_message_id.clone()),
@@ -125,7 +125,7 @@ pub fn ocpp_request_handler(
                                 reading.timestamp = Utc::now();
                             }
                         }
-                        command_writer.write(SendOcppToChargerCommand {
+                        command_writer.write(OcppCommandToAsset {
                             charge_point_id: cp_id.clone(),
                             message_type:    EOutgoingOcppMessage::MeterValuesResponse(MeterValuesConfPayload {}),
                             ocpp_message_id: Some(request.ocpp_message_id.clone()),
@@ -155,7 +155,7 @@ pub fn charger_control_to_ocpp_profile(
         &OcppConnectionState,
         &mut LastAppliedSetpointKw,
     ), (With<EAssetType>, Changed<TargetPowerSetpointKw>)>,
-    mut command_writer: EventWriter<SendOcppToChargerCommand>,
+    mut command_writer: EventWriter<OcppCommandToAsset>,
     mut message_id_counter: Local<u32>,
 ) {
     for (external_id, config, _guns, elec_cfg, behavior, target_kw, conn, mut last_kw) in query.iter_mut() {
@@ -165,9 +165,9 @@ pub fn charger_control_to_ocpp_profile(
         );
 
         if target_kw.0 == last_kw.0 || !conn.is_connected {
-            debug!(
-                "Skipping charger '{}' because setpoint is unchanged or charger is not connected.",
-                external_id.0
+            info!(
+                "Skipping charger '{}' because setpoint is unchanged (last: {} kW) or charger is not connected (is_connected: {}).",
+                external_id.0, last_kw.0, conn.is_connected
             );
             continue;
         }
@@ -220,7 +220,7 @@ pub fn charger_control_to_ocpp_profile(
             charging_schedule: schedule,
         };
 
-        command_writer.write(SendOcppToChargerCommand {
+        command_writer.write(OcppCommandToAsset {
             charge_point_id: cp_id.clone(),
             message_type: EOutgoingOcppMessage::SetChargingProfileRequest(SetChargingProfileReqPayload {
                 connector_id: 0,
@@ -242,13 +242,13 @@ pub fn charger_control_to_ocpp_profile(
 fn send_ocpp_command_helper(
     target_charge_point_id: &str,
     ocpp_message_to_send: EOutgoingOcppMessage,
-    ocpp_command_event_writer_ref: &mut EventWriter<SendOcppToChargerCommand>,
+    ocpp_command_event_writer_ref: &mut EventWriter<OcppCommandToAsset>,
     ocpp_message_id_counter_value: &mut u32,
     message_id_prefix: &str,
 ) {
     *ocpp_message_id_counter_value += 1;
     let ocpp_message_id_string_generated = format!("{}_{}", message_id_prefix, *ocpp_message_id_counter_value);
-    ocpp_command_event_writer_ref.write(SendOcppToChargerCommand {
+    ocpp_command_event_writer_ref.write(OcppCommandToAsset {
         charge_point_id: target_charge_point_id.to_string(),
         message_type: ocpp_message_to_send,
         ocpp_message_id: Some(ocpp_message_id_string_generated),
@@ -274,7 +274,7 @@ pub fn generic_ocpp_charger_initialization_system(
         &mut GenericChargerInitializationStatus,
         &AlfenSpecificConfig,
     )>,
-    mut ocpp_command_writer: EventWriter<SendOcppToChargerCommand>,
+    mut ocpp_command_writer: EventWriter<OcppCommandToAsset>,
     mut ocpp_message_id_generator_local: Local<u32>,
 ) {
     let ocpp_message_id_generator_ref_mut = &mut *ocpp_message_id_generator_local;
@@ -369,7 +369,7 @@ pub fn alfen_special_init_system(
         &GenericChargerInitializationStatus,
         &mut AlfenSpecialInitStatus,
     )>,
-    mut ocpp_command_writer: EventWriter<SendOcppToChargerCommand>,
+    mut ocpp_command_writer: EventWriter<OcppCommandToAsset>,
     mut ocpp_message_id_generator_local: Local<u32>,
 ) {
     let ocpp_message_id_generator_ref_mut = &mut *ocpp_message_id_generator_local;
@@ -434,8 +434,8 @@ pub fn alfen_special_init_system(
 
 /// Pull raw OCPP requests from the channel resource and fire Bevy events.
 pub fn ingest_ocpp_requests_from_channel_system(
-    channel: Res<OcppRequestReceiver>,
-    mut writer: EventWriter<OcppRequestFromChargerEvent>,
+    channel: Res<OcppFromAssetChannel>,
+    mut writer: EventWriter<OcppRequestFromAsset>,
 ) {
     loop {
         match channel.0.try_recv() {
@@ -448,8 +448,8 @@ pub fn ingest_ocpp_requests_from_channel_system(
 
 /// Drain Bevy‐generated `SendOcppToChargerCommand` events and push them into the channel resource.
 pub fn export_ocpp_commands_to_channel_system(
-    mut reader: EventReader<SendOcppToChargerCommand>,
-    channel: Res<OcppCommandSender>,
+    mut reader: EventReader<OcppCommandToAsset>,
+    channel: Res<OcppToAssetChannel>,
 ) {
     for cmd in reader.read() {
         let _ = channel.0.send(cmd.clone());

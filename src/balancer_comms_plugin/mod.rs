@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use crossbeam_channel::{Receiver, Sender};
+use serde::{Deserialize, Serialize};
 
 pub mod events;
 pub mod systems;
@@ -7,7 +8,7 @@ pub mod systems;
 pub use events::*;
 pub use systems::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BalancerSetpointData {
     pub external_id: String,
     pub target_power_kw: f32,

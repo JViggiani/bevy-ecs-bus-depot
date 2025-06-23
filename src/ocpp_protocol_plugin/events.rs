@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use crate::types::EOutgoingOcppMessage; 
 
 #[derive(Event, Debug, Clone)]
-pub struct OcppRequestFromChargerEvent {
+pub struct OcppRequestFromAsset {
     pub charge_point_id: String,
     pub action: String, 
     pub payload_json: String, 
@@ -10,14 +10,14 @@ pub struct OcppRequestFromChargerEvent {
 }
 
 #[derive(Event, Debug, Clone)]
-pub struct SendOcppToChargerCommand {
+pub struct OcppCommandToAsset {
     pub charge_point_id: String,
     pub message_type: EOutgoingOcppMessage, 
     pub ocpp_message_id: Option<String>, 
 }
 
 #[derive(Resource)]
-pub struct OcppRequestReceiver(pub crossbeam_channel::Receiver<OcppRequestFromChargerEvent>);
+pub struct OcppFromAssetChannel(pub crossbeam_channel::Receiver<OcppRequestFromAsset>);
 
 #[derive(Resource)]
-pub struct OcppCommandSender(pub crossbeam_channel::Sender<SendOcppToChargerCommand>);
+pub struct OcppToAssetChannel(pub crossbeam_channel::Sender<OcppCommandToAsset>);

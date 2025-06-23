@@ -4,7 +4,7 @@ pub mod events;
 pub mod systems;
 
 pub use components::*;
-pub use events::*;
+pub use events::{OcppRequestFromAsset, OcppCommandToAsset, OcppFromAssetChannel, OcppToAssetChannel};
 pub use systems::{
     ingest_ocpp_requests_from_channel_system,
     ocpp_request_handler,
@@ -30,8 +30,8 @@ impl Plugin for OcppProtocolPlugin {
             .register_type::<AlfenSpecialInitState>() 
             .register_type::<GenericChargerInitializationStatus>()
             .register_type::<GenericChargerInitProgress>()
-            .add_event::<OcppRequestFromChargerEvent>()
-            .add_event::<SendOcppToChargerCommand>()
+            .add_event::<OcppRequestFromAsset>()
+            .add_event::<OcppCommandToAsset>()
             .add_systems(Update, ingest_ocpp_requests_from_channel_system)
             .add_systems(Update, (
                 ocpp_request_handler,

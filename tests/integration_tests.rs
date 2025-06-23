@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use ocpp_bevy_poc::app_setup::{setup_bevy_app, AppMode};
 use ocpp_bevy_poc::balancer_comms_plugin::BalancerSetpointData;
 use ocpp_bevy_poc::ocpp_protocol_plugin::events::{
-    OcppRequestFromChargerEvent,
+    OcppRequestFromAsset,
 };
 use ocpp_bevy_poc::types::{
     BootNotificationReqPayload,
@@ -57,9 +57,9 @@ fn test_charger_connect_setpoint_update() {
     let (mut bevy_app, channels) = setup_bevy_app(site_config_json, AppMode::Headless, None);
 
     // 3. Grab OCPP and balancer channels
-    let ocpp_request_sender         = channels.ocpp_request_sender.clone();
-    let ocpp_command_receiver       = &channels.ocpp_command_receiver;
-    let balancer_setpoint_sender    = &channels.balancer_setpoint_sender;
+    let ocpp_from_asset_sender    = channels.ocpp_from_asset_sender.clone();
+    let ocpp_to_asset_receiver    = &channels.ocpp_to_asset_receiver;
+    let balancer_setpoint_sender  = &channels.balancer_setpoint_sender;
 
     // let the ECS startup systems (asset spawn, init) run once
     bevy_app.update();
@@ -69,7 +69,7 @@ fn test_charger_connect_setpoint_update() {
         charge_point_vendor: "TestVendor".into(),
         charge_point_model:  "TestModel".into(),
     };
-    ocpp_request_sender.send(OcppRequestFromChargerEvent {
+    ocpp_from_asset_sender.send(OcppRequestFromAsset {
         charge_point_id: asset_external_id.clone(),
         action:          "BootNotification".into(),
         payload_json:    serde_json::to_string(&boot_notification).unwrap(),
@@ -82,7 +82,7 @@ fn test_charger_connect_setpoint_update() {
     bevy_app.update(); 
     bevy_app.update();
 
-    let boot_response = try_recv(ocpp_command_receiver, Duration::from_secs(2)).unwrap();
+    let boot_response = try_recv(ocpp_to_asset_receiver, Duration::from_secs(2)).unwrap();
     assert_eq!(boot_response.charge_point_id, asset_external_id.clone());
     assert_eq!(boot_response.ocpp_message_id, Some("1".into()));
     if let EOutgoingOcppMessage::BootNotificationResponse(conf) = boot_response.message_type {
@@ -93,7 +93,7 @@ fn test_charger_connect_setpoint_update() {
 
     // 5. Drain generic‐init commands
     for _ in 0..10 {
-        if try_recv(ocpp_command_receiver, Duration::from_millis(50)).is_none() {
+        if try_recv(ocpp_to_asset_receiver, Duration::from_millis(50)).is_none() {
             break;
         }
     }
@@ -104,7 +104,7 @@ fn test_charger_connect_setpoint_update() {
         error_code:   "NoError".into(),
         status:       "Available".into(),
     };
-    ocpp_request_sender.send(OcppRequestFromChargerEvent {
+    ocpp_from_asset_sender.send(OcppRequestFromAsset {
         charge_point_id: asset_external_id.clone(),
         action:          "StatusNotification".into(),
         payload_json:    serde_json::to_string(&status_notification).unwrap(),
@@ -114,7 +114,7 @@ fn test_charger_connect_setpoint_update() {
     // Similar to before we need to call update twice
     bevy_app.update(); bevy_app.update();
 
-    let status_response = try_recv(ocpp_command_receiver, Duration::from_secs(1)).unwrap();
+    let status_response = try_recv(ocpp_to_asset_receiver, Duration::from_secs(1)).unwrap();
     assert_eq!(status_response.charge_point_id, asset_external_id.clone());
     assert_eq!(status_response.ocpp_message_id, Some("2".into()));
     if !matches!(status_response.message_type, EOutgoingOcppMessage::StatusNotificationResponse(_)) {
@@ -130,7 +130,7 @@ fn test_charger_connect_setpoint_update() {
     // Call update three times to ensure all systems (including export_ocpp_commands_to_channel_system) run
     bevy_app.update(); bevy_app.update(); bevy_app.update();
 
-    let profile10 = try_recv(ocpp_command_receiver, Duration::from_secs(1));
+    let profile10 = try_recv(ocpp_to_asset_receiver, Duration::from_secs(1));
     assert!(profile10.is_some(), "Expected SetChargingProfileRequest command, but none was received.");
 
     let profile10 = profile10.unwrap();
@@ -152,7 +152,7 @@ fn test_charger_connect_setpoint_update() {
     }).unwrap();
     bevy_app.update(); bevy_app.update(); bevy_app.update();
 
-    let profile5 = try_recv(ocpp_command_receiver, Duration::from_secs(1));
+    let profile5 = try_recv(ocpp_to_asset_receiver, Duration::from_secs(1));
     assert!(profile5.is_some(), "Expected SetChargingProfileRequest command, but none was received.");
 
     let profile5 = profile5.unwrap();

@@ -10,13 +10,25 @@ pub struct Position {
 pub struct AssetLabel;
 
 #[derive(Component)]
-pub struct Orchestrator;
-
-#[derive(Component)]
-pub struct ConnectionLine;
-
-#[derive(Component)]
-pub struct Balancer;
+pub struct ConnectionLine(pub Vec3, pub Vec3);
 
 #[derive(Component)]
 pub struct Visualized;
+
+#[derive(Component)]
+pub struct OrchestratorVisuals;
+
+#[derive(Component)]
+pub struct BalancerVisuals;
+
+#[derive(Component)]
+pub struct TextColor(pub Color);
+
+#[derive(Component)]
+pub struct TextFont {
+    pub font_size: f32,
+}
+
+#[derive(Component)]
+pub struct Text2d;
+

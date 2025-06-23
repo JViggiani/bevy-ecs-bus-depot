@@ -50,8 +50,8 @@ The project uses [crossbeam-channel](https://docs.rs/crossbeam-channel/) queues 
 - **modbus_response_sender / modbus_response_receiver**: For the Modbus Bridge to send Modbus responses back into the Orchestrator
 
 #### OCPP <-> Orchestrator
-- **ocpp_request_sender / ocpp_request_receiver**: For the OCPP Proxy to send requests/events into the Orchestrator
-- **ocpp_command_sender / ocpp_command_receiver**: For the Orchestrator to send OCPP commands/responses out to the OCPP Proxy.
+- **ocpp_from_asset_sender / ocpp_from_asset_receiver**: For the OCPP Proxy to send requests/events from an asset into the Orchestrator.
+- **ocpp_to_asset_sender / ocpp_to_asset_receiver**: For the Orchestrator to send OCPP commands/responses out to the OCPP Proxy to be sent to an asset.
 
 All queues are exposed in the `AppExternalChannelEnds` struct returned by `setup_bevy_app`.
 

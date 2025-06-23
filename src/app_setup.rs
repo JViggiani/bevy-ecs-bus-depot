@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::log::LogPlugin;
 use crate::core_asset_plugin::CoreAssetPlugin;
 use crate::asset_template_plugin::AssetTemplatePlugin;
-use crate::ocpp_protocol_plugin::{OcppProtocolPlugin, OcppRequestReceiver, OcppCommandSender};
+use crate::ocpp_protocol_plugin::{OcppProtocolPlugin, OcppFromAssetChannel, OcppToAssetChannel};
 use crate::modbus_protocol_plugin::{ModbusProtocolPlugin, ModbusRequestChannel, ModbusResponseChannel};
 use crate::balancer_comms_plugin::{BalancerCommsPlugin, IncomingSetpointChannel, OutgoingMeteringChannel};
 use crate::visualization_plugin::VisualizationPlugin;
@@ -12,7 +12,7 @@ use bevy_egui::EguiPlugin;
 use crate::visualization_plugin::log_capture::LogReceiver;
 use crate::balancer_comms_plugin::{BalancerSetpointData, BalancerMeteringData};
 use crate::modbus_protocol_plugin::{ModbusRequest, ModbusResponse};
-use crate::ocpp_protocol_plugin::events::{OcppRequestFromChargerEvent, SendOcppToChargerCommand};
+use crate::ocpp_protocol_plugin::events::{OcppRequestFromAsset, OcppCommandToAsset};
 
 /// External channel ends for production integration or tests.
 pub struct AppExternalChannelEnds {
@@ -29,10 +29,10 @@ pub struct AppExternalChannelEnds {
     pub modbus_response_receiver: Receiver<crate::modbus_protocol_plugin::ModbusResponse>,
 
     // OCPP ↔ Bevy
-    pub ocpp_request_sender: Sender<crate::ocpp_protocol_plugin::events::OcppRequestFromChargerEvent>,
-    pub ocpp_request_receiver: Receiver<crate::ocpp_protocol_plugin::events::OcppRequestFromChargerEvent>,
-    pub ocpp_command_sender: Sender<crate::ocpp_protocol_plugin::events::SendOcppToChargerCommand>,
-    pub ocpp_command_receiver: Receiver<crate::ocpp_protocol_plugin::events::SendOcppToChargerCommand>,
+    pub ocpp_from_asset_sender: Sender<crate::ocpp_protocol_plugin::events::OcppRequestFromAsset>,
+    pub ocpp_from_asset_receiver: Receiver<crate::ocpp_protocol_plugin::events::OcppRequestFromAsset>,
+    pub ocpp_to_asset_sender: Sender<crate::ocpp_protocol_plugin::events::OcppCommandToAsset>,
+    pub ocpp_to_asset_receiver: Receiver<crate::ocpp_protocol_plugin::events::OcppCommandToAsset>,
 }
 
 #[derive(PartialEq, Eq)]
@@ -57,8 +57,8 @@ pub fn setup_bevy_app(
     let (modbus_response_sender, modbus_response_receiver) = unbounded::<ModbusResponse>();
 
     // OCPP channels
-    let (ocpp_request_sender, ocpp_request_receiver) = unbounded::<OcppRequestFromChargerEvent>();
-    let (ocpp_command_sender, ocpp_command_receiver) = unbounded::<SendOcppToChargerCommand>();
+    let (ocpp_from_asset_sender, ocpp_from_asset_receiver) = unbounded::<OcppRequestFromAsset>();
+    let (ocpp_to_asset_sender, ocpp_to_asset_receiver) = unbounded::<OcppCommandToAsset>();
 
     app.insert_resource(SiteConfigJson(config_json));
 
@@ -73,10 +73,10 @@ pub fn setup_bevy_app(
             
             let viz_channels = crate::visualization_plugin::setup_visualization_channels(
                 balancer_setpoint_sender.clone(),
-                ocpp_request_sender.clone(),
+                ocpp_from_asset_sender.clone(),
                 modbus_response_sender.clone(),
                 balancer_metering_receiver.clone(),
-                ocpp_command_receiver.clone(),
+                ocpp_to_asset_receiver.clone(),
                 modbus_request_receiver.clone(),
             );
             app.insert_resource(viz_channels);
@@ -102,8 +102,8 @@ pub fn setup_bevy_app(
        .insert_resource(OutgoingMeteringChannel(balancer_metering_sender.clone()))
        .insert_resource(ModbusRequestChannel(modbus_request_sender.clone()))
        .insert_resource(ModbusResponseChannel(modbus_response_receiver.clone()))
-       .insert_resource(OcppRequestReceiver(ocpp_request_receiver.clone()))
-       .insert_resource(OcppCommandSender(ocpp_command_sender.clone()));
+       .insert_resource(OcppFromAssetChannel(ocpp_from_asset_receiver.clone()))
+       .insert_resource(OcppToAssetChannel(ocpp_to_asset_sender.clone()));
 
     let channels = AppExternalChannelEnds {
         balancer_setpoint_sender,
@@ -114,10 +114,10 @@ pub fn setup_bevy_app(
         modbus_request_receiver,
         modbus_response_sender,
         modbus_response_receiver,
-        ocpp_request_sender,
-        ocpp_request_receiver,
-        ocpp_command_sender,
-        ocpp_command_receiver,
+        ocpp_from_asset_sender,
+        ocpp_from_asset_receiver,
+        ocpp_to_asset_sender,
+        ocpp_to_asset_receiver,
     };
     (app, channels)
 }

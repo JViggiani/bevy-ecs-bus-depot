@@ -1,6 +1,5 @@
 // Declare all modules that make up the library
-pub mod types;
-pub mod error;
+pub mod common;
 pub mod app_setup;
 
 pub mod core_asset_plugin;

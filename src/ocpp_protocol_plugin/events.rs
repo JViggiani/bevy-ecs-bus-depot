@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::types::EOutgoingOcppMessage; 
+use crate::ocpp_protocol_plugin::types::EOutgoingOcppMessage; 
 
 #[derive(Event, Debug, Clone)]
 pub struct OcppRequestFromAsset {

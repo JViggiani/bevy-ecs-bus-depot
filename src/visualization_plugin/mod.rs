@@ -1,52 +1,19 @@
 use bevy::prelude::*;
 use bevy_pancam::PanCamPlugin;
 use std::collections::HashMap;
+use crate::balancer_comms_plugin::balancer_messages::{BalancerMeteringMessage, BalancerSetpointMessage};
+use crate::modbus_protocol_plugin::{ModbusRequest, ModbusResponse};
+use crate::ocpp_protocol_plugin::events::{OcppCommandToAsset, OcppRequestFromAsset};
 
 pub mod components;
 pub mod log_capture;
+pub mod resources;
 pub mod systems;
 
-use crate::balancer_comms_plugin::{BalancerSetpointData, BalancerMeteringData};
-use crate::modbus_protocol_plugin::{ModbusRequest, ModbusResponse};
-use crate::ocpp_protocol_plugin::events::{OcppRequestFromAsset, OcppCommandToAsset};
-use self::systems::*;
-
-#[derive(Resource, Default)]
-pub struct PositionsAttached(pub bool);
-
-#[derive(Resource, Default)]
-pub struct LogMessages(pub Vec<String>);
-
-#[derive(Resource, Default)]
-pub struct OutputMessages {
-    pub balancer_metering: Vec<String>,
-    pub ocpp_commands: Vec<String>,
-    pub modbus_requests: Vec<String>,
-}
-
-#[derive(Resource)]
-pub struct MessageChannels {
-    // Senders for input TO the orchestrator
-    pub balancer_setpoint_sender: crossbeam_channel::Sender<BalancerSetpointData>,
-    pub ocpp_from_asset_sender: crossbeam_channel::Sender<OcppRequestFromAsset>,
-    pub modbus_response_sender: crossbeam_channel::Sender<ModbusResponse>,
-    // Receivers for output FROM the orchestrator
-    pub balancer_metering_receiver: crossbeam_channel::Receiver<BalancerMeteringData>,
-    pub ocpp_to_asset_receiver: crossbeam_channel::Receiver<OcppCommandToAsset>,
-    pub modbus_request_receiver: crossbeam_channel::Receiver<ModbusRequest>,
-}
-
-#[derive(Resource)]
-pub struct MessageTemplateLibrary(pub HashMap<String, Vec<(String, String)>>);
-
-#[derive(Resource, Default)]
-pub struct SelectedQueue(pub String);
-
-#[derive(Resource, Default)]
-pub struct SelectedTemplate(pub String);
-
-#[derive(Resource, Default)]
-pub struct MessageInput(pub String);
+pub use components::*;
+pub use log_capture::*;
+pub use resources::*;
+pub use systems::*;
 
 pub struct VisualizationPlugin;
 
@@ -104,22 +71,22 @@ impl Plugin for VisualizationPlugin {
                spawn_asset_visuals_system.after(attach_positions_system),
                spawn_orchestrator_system.run_if(orchestrator_not_spawned).after(spawn_asset_visuals_system),
                spawn_balancer_system.run_if(balancer_not_spawned).after(spawn_orchestrator_system),
-               update_asset_colors_system,
-               handle_mouse_clicks_system,
-           ))
-           .add_systems(Update, (
-               pull_captured_logs_system,
-               pull_output_messages_system,
-               ui_system,
+               update_asset_colors_system.after(spawn_balancer_system),
+               handle_mouse_clicks_system.after(update_asset_colors_system),
+               pull_captured_logs_system.after(handle_mouse_clicks_system),
+               pull_output_messages_system.after(pull_captured_logs_system),
+               ui_system.after(pull_output_messages_system),
            ));
+
+        info!("VisualizationPlugin loaded");
     }
 }
 
 pub fn setup_visualization_channels(
-    balancer_setpoint_sender: crossbeam_channel::Sender<BalancerSetpointData>,
+    balancer_setpoint_sender: crossbeam_channel::Sender<BalancerSetpointMessage>,
     ocpp_from_asset_sender: crossbeam_channel::Sender<OcppRequestFromAsset>,
     modbus_response_sender: crossbeam_channel::Sender<ModbusResponse>,
-    balancer_metering_receiver: crossbeam_channel::Receiver<BalancerMeteringData>,
+    balancer_metering_receiver: crossbeam_channel::Receiver<BalancerMeteringMessage>,
     ocpp_to_asset_receiver: crossbeam_channel::Receiver<OcppCommandToAsset>,
     modbus_request_receiver: crossbeam_channel::Receiver<ModbusRequest>,
 ) -> MessageChannels {

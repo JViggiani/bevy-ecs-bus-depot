@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 #[derive(Event, Debug, Clone)]
-pub struct IncomingSetpointEvent {
-    pub external_id: String,
-    pub target_power_kw: f32,
+pub struct SetpointCommand {
+    pub entity: Entity,
+    pub power_kw: f32,
 }

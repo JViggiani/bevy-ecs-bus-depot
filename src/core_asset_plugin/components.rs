@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::types::{EMeteringDataSource}; 
+use crate::common::types::{EMeteringDataSource}; 
 use chrono::{DateTime, Utc};
 
 #[derive(Component, Debug, Clone, Reflect, Serialize, Deserialize)]
@@ -14,7 +14,7 @@ pub struct AssetInfo {
     pub model: String,
 }
 
-#[derive(Component, Debug, Clone, Reflect, Serialize, Deserialize)]
+#[derive(Component, Debug, Clone, Reflect, Serialize, Deserialize, Default)]
 #[reflect(Component, Serialize, Deserialize, Default)]
 pub struct CurrentMeterReading {
     pub power_kw: f32,
@@ -22,16 +22,6 @@ pub struct CurrentMeterReading {
     #[reflect(ignore)] 
     #[serde(with = "chrono::serde::ts_seconds")]
     pub timestamp: DateTime<Utc>, 
-}
-
-impl Default for CurrentMeterReading {
-    fn default() -> Self {
-        Self {
-            power_kw: 0.0,
-            energy_kwh: 0.0,
-            timestamp: Utc::now(),
-        }
-    }
 }
 
 
@@ -46,6 +36,7 @@ pub struct LastAppliedSetpointKw(pub f32);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Reflect)]
 #[reflect(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MeteringSourceDetails {
     Modbus {
         ip: String,

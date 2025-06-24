@@ -3,31 +3,31 @@
     "Phihong_AC_EU_Charger_Template": {
       "asset_type": "Charger",
       "components": [
-        { "type": "AssetInfo", "make": "Phihong", "model": "AC_EU_Dual_V2" },
-        { "type": "ChargerElectricalConfig", "nominal_voltage_ln": 230.0, "active_phase_count": 3 },
-        { "type": "OcppProfileBehavior", "rate_unit": "Amps", "profile_phases_in_ocpp_message": 3 },
-        { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } }
+        { "type": "asset_info", "make": "Phihong", "model": "AC_EU_Dual_V2" },
+        { "type": "charger_electrical_config", "nominal_voltage_ln": 230.0, "active_phase_count": 3 },
+        { "type": "ocpp_profile_behavior", "rate_unit": "Amps", "profile_phases_in_ocpp_message": 3 },
+        { "type": "metering_source", "source_type": "Ocpp", "details": { "ocpp": {} } }
       ]
     },
     "Alfen_AC_EU_Charger_Template": {
       "asset_type": "Charger",
       "components": [
-        { "type": "AssetInfo", "make": "Alfen", "model": "Eve Single Pro-Line" },
-        { "type": "ChargerElectricalConfig", "nominal_voltage_ln": 230.0, "active_phase_count": 1 },
-        { "type": "OcppProfileBehavior", "rate_unit": "Watts", "profile_phases_in_ocpp_message": 1 },
-        { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } },
-        { "type": "AlfenSpecificConfig", "default_tx_profile_power_watts": 1500.0 }
+        { "type": "asset_info", "make": "Alfen", "model": "Eve Single Pro-Line" },
+        { "type": "charger_electrical_config", "nominal_voltage_ln": 230.0, "active_phase_count": 1 },
+        { "type": "ocpp_profile_behavior", "rate_unit": "Watts", "profile_phases_in_ocpp_message": 1 },
+        { "type": "metering_source", "source_type": "Ocpp", "details": { "ocpp": {} } },
+        { "type": "alfen_specific_config", "default_tx_profile_power_watts": 1500.0 }
       ]
     },
     "Generic_Battery_Template": {
         "asset_type": "Battery",
         "components": [
-            { "type": "AssetInfo", "make": "Generic", "model": "ESS-100kWh" },
+            { "type": "asset_info", "make": "Generic", "model": "ESS-100kWh" },
             { 
-              "type": "MeteringSource", 
+              "type": "metering_source", 
               "source_type": "Modbus", 
               "details": {
-                "Modbus": {
+                "modbus": {
                   "ip": "127.0.0.1", 
                   "port": 5021,
                   "unit_id": 1, 
@@ -37,7 +37,7 @@
               } 
             },
             {
-              "type": "ModbusControlConfig",
+              "type": "modbus_control_config",
               "ip": "127.0.0.1",
               "port": 5021,
               "unit_id": 1
@@ -51,7 +51,7 @@
       "template_id": "Phihong_AC_EU_Charger_Template",
       "instance_components": [
         {
-          "type": "OcppConfig",
+          "type": "ocpp_config",
           "version": "V1_6J",
           "charge_point_id": "CH001"
         }
@@ -62,7 +62,7 @@
       "template_id": "Alfen_AC_EU_Charger_Template",
       "instance_components": [
         {
-          "type": "OcppConfig",
+          "type": "ocpp_config",
           "version": "V1_6J",
           "charge_point_id": "CH002"
         }

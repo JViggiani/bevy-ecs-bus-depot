@@ -2,10 +2,27 @@ use bevy::prelude::*;
 use super::events::{OcppRequestFromAsset, OcppCommandToAsset};
 use super::components::*;
 use crate::core_asset_plugin::{TargetPowerSetpointKw, CurrentMeterReading, MeteringSource, ExternalId, LastAppliedSetpointKw};
-use crate::types::*;
+use super::types::{
+    BootNotificationReqPayload,
+    StatusNotificationReqPayload,
+    MeterValuesReqPayload,
+    EOutgoingOcppMessage,
+    ChargingSchedule,
+    CsChargingProfiles,
+    ChargingSchedulePeriod,
+    ChangeConfigurationReqPayload,
+    MeterValuesConfPayload,
+    StatusNotificationConfPayload,
+    BootNotificationConfPayload,
+    RegistrationStatus,
+    EChargingRateUnit,
+    SetChargingProfileReqPayload,
+};
 use chrono::Utc;
 use crate::ocpp_protocol_plugin::events::{OcppFromAssetChannel, OcppToAssetChannel};
 use crossbeam_channel::TryRecvError;
+use crate::common::external_id_map::ExternalIdMap;
+use crate::common::types::{EAssetType, EOperationalStatus, EMeteringDataSource};
 
 /// Translate OCPP status string to internal enum.
 fn map_status_to_gun_status(status: &str) -> EGunStatusOcpp {
@@ -29,113 +46,110 @@ fn map_status_to_gun_status(status: &str) -> EGunStatusOcpp {
 /// Handle incoming OCPP requests (BootNotification, StatusNotification, MeterValues).
 pub fn ocpp_request_handler(
     mut event_reader: EventReader<OcppRequestFromAsset>,
-    mut command_writer: EventWriter<OcppCommandToAsset>,
-    mut charger_query: Query<(
-        Entity,
-        &ExternalId,
+    id_map: Res<ExternalIdMap>,
+    mut query: Query<(
+        &OcppConfig,
         &mut OcppConnectionState,
         &mut Guns,
         &mut CurrentMeterReading,
         &MeteringSource,
         &mut EOperationalStatus,
     )>,
+    mut command_writer: EventWriter<OcppCommandToAsset>,
 ) {
     for request in event_reader.read() {
-        info!("Received {} for '{}'", request.action, request.charge_point_id);
+        if let Some(&entity) = id_map.0.get(&request.charge_point_id) {
+            // fetch all needed components in one go
+            if let Ok((config, mut conn, mut guns, mut reading, source, mut status)) =
+                query.get_mut(entity)
+            {
+                let cp_id = &config.charge_point_id;
 
-        // Find matching charger entity by ExternalId
-        if let Some(entity) = charger_query.iter_mut()
-            .find(|(_, ext_id, _, _, _, _, _)| ext_id.0 == request.charge_point_id)
-            .map(|(e, _, _, _, _, _, _)| e)
-        {
-            let (_e, external_id, mut conn, mut guns, mut reading, source, mut status) =
-                charger_query.get_mut(entity).unwrap();
-            let cp_id = external_id.0.clone();
+                match request.action.as_str() {
+                    "BootNotification" => {
+                        if let Ok(_payload) = serde_json::from_str::<BootNotificationReqPayload>(&request.payload_json) {
+                            conn.is_connected = true;
+                            conn.last_heartbeat_rcvd = Some(Utc::now());
+                            *status = EOperationalStatus::Online;
 
-            match request.action.as_str() {
-                "BootNotification" => {
-                    if let Ok(_payload) = serde_json::from_str::<BootNotificationReqPayload>(&request.payload_json) {
-                        conn.is_connected = true;
-                        conn.last_heartbeat_rcvd = Some(Utc::now());
-                        *status = EOperationalStatus::Online;
-
-                        let response = BootNotificationConfPayload {
-                            current_time: Utc::now().to_rfc3339(),
-                            interval:     300,
-                            status:       RegistrationStatus::Accepted,
-                        };
-                        command_writer.write(OcppCommandToAsset {
-                            charge_point_id: cp_id.clone(),
-                            message_type:    EOutgoingOcppMessage::BootNotificationResponse(response),
-                            ocpp_message_id: Some(request.ocpp_message_id.clone()),
-                        });
-                    } else {
-                        error!("Invalid BootNotification payload");
-                    }
-                }
-
-                "StatusNotification" => {
-                    if let Ok(payload) = serde_json::from_str::<StatusNotificationReqPayload>(&request.payload_json) {
-                        let status_enum = map_status_to_gun_status(&payload.status);
-
-                        if payload.connector_id == 0 {
-                            if status_enum == EGunStatusOcpp::Faulted || payload.error_code != "NoError" {
-                                *status = EOperationalStatus::Faulted;
-                            } else if *status == EOperationalStatus::Faulted {
-                                *status = EOperationalStatus::Online;
-                            }
-                            for gun in guns.0.iter_mut() {
-                                gun.status = status_enum.clone();
-                            }
-                        } else if let Some(gun) = guns.0.iter_mut().find(|g| g.connector_id == payload.connector_id) {
-                            gun.status = status_enum;
+                            let response = BootNotificationConfPayload {
+                                current_time: Utc::now().to_rfc3339(),
+                                interval:     300,
+                                status:       RegistrationStatus::Accepted,
+                            };
+                            command_writer.write(OcppCommandToAsset {
+                                charge_point_id: cp_id.clone(),
+                                message_type:    EOutgoingOcppMessage::BootNotificationResponse(response),
+                                ocpp_message_id: Some(request.ocpp_message_id.clone()),
+                            });
                         } else {
-                            warn!("Unknown connector {}", payload.connector_id);
+                            error!("Invalid BootNotification payload");
                         }
-
-                        command_writer.write(OcppCommandToAsset {
-                            charge_point_id: cp_id.clone(),
-                            message_type:    EOutgoingOcppMessage::StatusNotificationResponse(StatusNotificationConfPayload {}),
-                            ocpp_message_id: Some(request.ocpp_message_id.clone()),
-                        });
-                    } else {
-                        error!("Invalid StatusNotification payload");
                     }
-                }
 
-                "MeterValues" => {
-                    if let Ok(payload) = serde_json::from_str::<MeterValuesReqPayload>(&request.payload_json) {
-                        if source.source_type == EMeteringDataSource::Ocpp {
-                            if let Some(sample) = payload.meter_value.first() {
-                                for sv in &sample.sampled_value {
-                                    match sv.measurand.as_deref() {
-                                        Some("Power.Active.Import") => {
-                                            if let Ok(val) = sv.value.parse::<f32>() {
-                                                reading.power_kw = if sv.unit.as_deref() == Some("kW") { val } else { val / 1000.0 };
-                                            }
-                                        }
-                                        Some("Energy.Active.Import.Register") => {
-                                            if let Ok(val) = sv.value.parse::<f64>() {
-                                                reading.energy_kwh = if sv.unit.as_deref() == Some("kWh") { val } else { val / 1000.0 };
-                                            }
-                                        }
-                                        _ => {}
-                                    }
+                    "StatusNotification" => {
+                        if let Ok(payload) = serde_json::from_str::<StatusNotificationReqPayload>(&request.payload_json) {
+                            let status_enum = map_status_to_gun_status(&payload.status);
+
+                            if payload.connector_id == 0 {
+                                if status_enum == EGunStatusOcpp::Faulted || payload.error_code != "NoError" {
+                                    *status = EOperationalStatus::Faulted;
+                                } else if *status == EOperationalStatus::Faulted {
+                                    *status = EOperationalStatus::Online;
                                 }
-                                reading.timestamp = Utc::now();
+                                for gun in guns.0.iter_mut() {
+                                    gun.status = status_enum.clone();
+                                }
+                            } else if let Some(gun) = guns.0.iter_mut().find(|g| g.connector_id == payload.connector_id) {
+                                gun.status = status_enum;
+                            } else {
+                                warn!("Unknown connector {}", payload.connector_id);
                             }
-                        }
-                        command_writer.write(OcppCommandToAsset {
-                            charge_point_id: cp_id.clone(),
-                            message_type:    EOutgoingOcppMessage::MeterValuesResponse(MeterValuesConfPayload {}),
-                            ocpp_message_id: Some(request.ocpp_message_id.clone()),
-                        });
-                    } else {
-                        error!("Invalid MeterValues payload");
-                    }
-                }
 
-                other => warn!("Unhandled OCPP action '{}'", other),
+                            command_writer.write(OcppCommandToAsset {
+                                charge_point_id: cp_id.clone(),
+                                message_type:    EOutgoingOcppMessage::StatusNotificationResponse(StatusNotificationConfPayload {}),
+                                ocpp_message_id: Some(request.ocpp_message_id.clone()),
+                            });
+                        } else {
+                            error!("Invalid StatusNotification payload");
+                        }
+                    }
+
+                    "MeterValues" => {
+                        if let Ok(payload) = serde_json::from_str::<MeterValuesReqPayload>(&request.payload_json) {
+                            if source.source_type == EMeteringDataSource::Ocpp {
+                                if let Some(sample) = payload.meter_value.first() {
+                                    for sv in &sample.sampled_value {
+                                        match sv.measurand.as_deref() {
+                                            Some("Power.Active.Import") => {
+                                                if let Ok(val) = sv.value.parse::<f32>() {
+                                                    reading.power_kw = if sv.unit.as_deref() == Some("kW") { val } else { val / 1000.0 };
+                                                }
+                                            }
+                                            Some("Energy.Active.Import.Register") => {
+                                                if let Ok(val) = sv.value.parse::<f64>() {
+                                                    reading.energy_kwh = if sv.unit.as_deref() == Some("kWh") { val } else { val / 1000.0 };
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    reading.timestamp = Utc::now();
+                                }
+                            }
+                            command_writer.write(OcppCommandToAsset {
+                                charge_point_id: cp_id.clone(),
+                                message_type:    EOutgoingOcppMessage::MeterValuesResponse(MeterValuesConfPayload {}),
+                                ocpp_message_id: Some(request.ocpp_message_id.clone()),
+                            });
+                        } else {
+                            error!("Invalid MeterValues payload");
+                        }
+                    }
+
+                    other => warn!("Unhandled OCPP action '{}'", other),
+                }
             }
         } else {
             warn!("No charger found for '{}'", request.charge_point_id);

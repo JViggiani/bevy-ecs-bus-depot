@@ -1,29 +1,21 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Component, Reflect)]
-#[reflect(Component, Serialize, Deserialize)]
-pub enum EAssetType {
-    Charger,
-    Battery,
-    GridConnection,
-    SolarPV,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Component, Reflect, Default)]
-#[reflect(Component, Serialize, Deserialize, Default)]
-pub enum EOperationalStatus {
-    #[default]
-    Initializing,
-    Online,
-    Offline,
-    Faulted,
-}
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Reflect)]
 #[reflect(Serialize, Deserialize)]
 pub enum EOcppVersion {
     V1_6J,
+}
+
+impl FromStr for EOcppVersion {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "V1_6J" => Ok(EOcppVersion::V1_6J),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Reflect)]
@@ -33,12 +25,15 @@ pub enum EChargingRateUnit {
     Amps,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Component, Reflect)]
-#[reflect(Component, Serialize, Deserialize)]
-pub enum EMeteringDataSource {
-    Ocpp,
-    Modbus,
-    InternalCalculation,
+impl FromStr for EChargingRateUnit {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Watts" => Ok(EChargingRateUnit::Watts),
+            "Amps" => Ok(EChargingRateUnit::Amps),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Reflect, Default)]

@@ -20,15 +20,3 @@ pub struct OrchestratorVisuals;
 
 #[derive(Component)]
 pub struct BalancerVisuals;
-
-#[derive(Component)]
-pub struct TextColor(pub Color);
-
-#[derive(Component)]
-pub struct TextFont {
-    pub font_size: f32,
-}
-
-#[derive(Component)]
-pub struct Text2d;
-

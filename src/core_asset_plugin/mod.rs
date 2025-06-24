@@ -1,4 +1,7 @@
 use bevy::prelude::*;
+
+use crate::common::types::{EAssetType, EOperationalStatus};
+
 pub mod components;
 
 pub use components::*;
@@ -7,27 +10,36 @@ pub struct CoreAssetPlugin;
 
 impl Plugin for CoreAssetPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<ExternalId>()
-            .register_type::<AssetInfo>()
-            .register_type::<crate::types::EAssetType>()
-            .register_type::<crate::types::EOperationalStatus>()
-            .register_type::<CurrentMeterReading>()
-            .register_type::<TargetPowerSetpointKw>()
-            .register_type::<LastAppliedSetpointKw>()
-            .register_type::<MeteringSource>()
-            .add_systems(Update, (
-                debug_core_assets_system,
-            ));
+        app.register_type::<components::ExternalId>()
+            .register_type::<components::AssetInfo>()
+            .register_type::<EAssetType>()
+            .register_type::<EOperationalStatus>()
+            .register_type::<components::CurrentMeterReading>()
+            .register_type::<components::TargetPowerSetpointKw>()
+            .register_type::<components::LastAppliedSetpointKw>()
+            .register_type::<components::MeteringSource>();
+        
+        // Debug‐log setpoint changes only in debug mode
+        #[cfg(debug_assertions)]
+        app.add_systems(Update, debug_core_assets_system);
     }
 }
 
+#[cfg(debug_assertions)]
 fn debug_core_assets_system(
-    changed_setpoint_asset_query: Query<(Entity, &ExternalId, &AssetInfo, &crate::types::EAssetType, &CurrentMeterReading, &TargetPowerSetpointKw), Changed<TargetPowerSetpointKw>>
+    query: Query<(
+        Entity,
+        &components::ExternalId,
+        &components::AssetInfo,
+        &EAssetType,
+        &components::CurrentMeterReading,
+        &components::TargetPowerSetpointKw
+    ), Changed<components::TargetPowerSetpointKw>>,
 ) {
-    for (entity_id, external_id_component, asset_info_component, asset_type_component, meter_reading_component, target_setpoint_component) in changed_setpoint_asset_query.iter() {
+    for (e, id, info, ty, reading, setpoint) in query.iter() {
         debug!(
-            "Entity {:?}, ID: {}, Type: {:?}, Make: {}, Model: {}, Meter: {:?}, New Setpoint: {} kW",
-            entity_id, external_id_component.0, asset_type_component, asset_info_component.make, asset_info_component.model, meter_reading_component, target_setpoint_component.0
+            "Entity {:?} [{}|{:?}] {} {} → meter: {:?}, setpoint: {} kW",
+            e, id.0, ty, info.make, info.model, reading, setpoint.0
         );
     }
 }

@@ -1,18 +1,31 @@
-use bevy::prelude::*;
-use bevy::render::camera::{Projection, OrthographicProjection};
+use bevy::{
+    prelude::*,
+    render::camera::{Projection, OrthographicProjection},
+    sprite::Anchor,
+    text::{JustifyText, TextColor, TextFont, TextLayout},
+};
 use bevy_egui::{egui, EguiContexts};
 use bevy_pancam::PanCam;
 
 use crate::core_asset_plugin::{ExternalId, AssetInfo, TargetPowerSetpointKw, CurrentMeterReading};
-use crate::types::EAssetType;
-use crate::balancer_comms_plugin::BalancerSetpointData;
-use crate::ocpp_protocol_plugin::events::OcppRequestFromAsset;
-use crate::modbus_protocol_plugin::ModbusResponse;
-use crate::asset_template_plugin::TotalAssets;
-
+use crate::common::types::EAssetType;
 use super::components::{Position, AssetLabel, ConnectionLine, Visualized, OrchestratorVisuals, BalancerVisuals};
 use super::log_capture::LogReceiver;
-use super::{PositionsAttached, LogMessages, OutputMessages, MessageChannels, SelectedQueue, MessageInput, MessageTemplateLibrary, SelectedTemplate};
+use super::resources::{
+    PositionsAttached, LogMessages, OutputMessages, MessageChannels,
+    MessageTemplateLibrary, SelectedQueue, SelectedTemplate, MessageInput,
+};
+use crate::balancer_comms_plugin::balancer_messages::{BalancerSetpointMessage};
+use crate::asset_template_plugin::TotalAssets;
+use crate::modbus_protocol_plugin::ModbusResponse;
+use crate::ocpp_protocol_plugin::events::OcppRequestFromAsset;
+
+// constants for layout and sizes
+const ASSET_SIZE: Vec2           = Vec2::new(50.0, 50.0);
+const ORCHESTRATOR_SIZE: Vec2    = Vec2::new(60.0, 60.0);
+const BALANCER_SIZE: Vec2        = Vec2::new(50.0, 50.0);
+const SPACING_Y:    f32          = -250.0;
+const LABEL_OFFSET: f32          = 40.0;
 
 pub fn positions_not_attached(attached: Res<PositionsAttached>) -> bool {
     !attached.0
@@ -73,7 +86,7 @@ pub fn attach_positions_system(
 
     for (i, entity) in assets.into_iter().enumerate() {
         let x = start_x + i as f32 * spacing;
-        let y = -250.0; // Position assets at the bottom
+        let y = SPACING_Y; // Position assets at the bottom
         commands.entity(entity).insert(Position { x, y });
     }
     
@@ -96,7 +109,7 @@ pub fn spawn_asset_visuals_system(
         commands.entity(entity)
             .insert(Sprite {
                 color,
-                custom_size: Some(Vec2::new(50.0, 50.0)),
+                custom_size: Some(ASSET_SIZE),
                 ..default()
             })
             .insert(Transform::from_xyz(pos.x, pos.y, 0.0))
@@ -104,6 +117,7 @@ pub fn spawn_asset_visuals_system(
             .insert(Visibility::default())
             .insert(Visualized);
 
+        // text label above
         commands.spawn((
             Text2d::new(format!("{}\n{}", external_id.0, info.model)),
             TextFont {
@@ -111,9 +125,9 @@ pub fn spawn_asset_visuals_system(
                 ..default()
             },
             TextColor(Color::WHITE),
-            Transform::from_xyz(pos.x, pos.y + 40.0, 1.0),
-            GlobalTransform::default(),
-            Visibility::default(),
+            TextLayout::new_with_justify(JustifyText::Center),
+            Anchor::Center,
+            Transform::from_xyz(pos.x, pos.y + LABEL_OFFSET, 1.0),
             AssetLabel,
         ));
 
@@ -153,15 +167,14 @@ pub fn spawn_orchestrator_system(
             ..default()
         },
         TextColor(Color::WHITE),
-        Transform::from_xyz(0.0, 50.0, 1.0),
-        GlobalTransform::default(),
-        Visibility::default(),
+        Anchor::Center,
+        Transform::from_xyz(0.0, ORCHESTRATOR_SIZE.y / 2.0 + 10.0, 1.0),
         AssetLabel,
     ));
 
     // Draw connection lines from orchestrator to each asset
-    for position in asset_query.iter() {
-        spawn_connection_line(&mut commands, Vec3::ZERO, Vec3::new(position.x, position.y, 0.0));
+    for pos in asset_query.iter() {
+        spawn_connection_line(&mut commands, Vec3::ZERO, Vec3::new(pos.x, pos.y, 0.0));
     }
 
     // Mark as spawned so this system doesn't run again
@@ -179,14 +192,16 @@ pub fn spawn_balancer_system(
         return;
     }
 
+    let balancer_pos = Vec3::new(0.0, 150.0, 0.0);
+
     // Spawn balancer above orchestrator
     commands.spawn((
         Sprite {
             color: Color::srgb(0.9, 0.5, 0.1),
-            custom_size: Some(Vec2::new(50.0, 50.0)),
+            custom_size: Some(BALANCER_SIZE),
             ..default()
         },
-        Transform::from_xyz(0.0, 150.0, 0.0),
+        Transform::from_translation(balancer_pos),
         GlobalTransform::default(),
         Visibility::default(),
         BalancerVisuals,
@@ -200,14 +215,19 @@ pub fn spawn_balancer_system(
             ..default()
         },
         TextColor(Color::WHITE),
-        Transform::from_xyz(0.0, 180.0, 1.0),
-        GlobalTransform::default(),
-        Visibility::default(),
+        Anchor::Center,
+        Transform::from_xyz(balancer_pos.x, balancer_pos.y + BALANCER_SIZE.y / 2.0 + 10.0, 1.0),
         AssetLabel,
     ));
 
     // Draw connection line from balancer to orchestrator
-    spawn_connection_line(&mut commands, Vec3::new(0.0, 150.0, 0.0), Vec3::ZERO);
+    let balancer_bottom = balancer_pos - Vec3::Y * (BALANCER_SIZE.y / 2.0);
+    let orchestrator_top = Vec3::Y * (ORCHESTRATOR_SIZE.y / 2.0);
+    spawn_connection_line(
+        &mut commands,
+        balancer_bottom,
+        orchestrator_top,
+    );
 
     // Mark as spawned so this system doesn't run again
     balancer_spawned.0 = true;
@@ -215,18 +235,18 @@ pub fn spawn_balancer_system(
 }
 
 fn spawn_connection_line(commands: &mut Commands, start: Vec3, end: Vec3) {
-    let direction = end - start;
-    let length = direction.length();
-    let midpoint = start + direction * 0.5;
-    
+    let dir = end - start;
+    let len = dir.length();
+    let mid = start + dir * 0.5;
+
     commands.spawn_empty()
         .insert(Sprite {
             color: Color::srgb(0.5, 0.5, 0.5),
-            custom_size: Some(Vec2::new(length, 2.0)),
+            custom_size: Some(Vec2::new(len, 2.0)),
             ..default()
         })
-        .insert(Transform::from_translation(midpoint)
-            .with_rotation(Quat::from_rotation_z(direction.y.atan2(direction.x))))
+        .insert(Transform::from_translation(mid)
+            .with_rotation(Quat::from_rotation_z(dir.y.atan2(dir.x))))
         .insert(GlobalTransform::default())
         .insert(Visibility::default())
         .insert(ConnectionLine(start, end));
@@ -429,18 +449,10 @@ fn send_message(
 ) {
     match selected_queue {
         "Balancer Setpoint" => {
-            if let Ok(data) = serde_json::from_str::<BalancerSetpointData>(message) {
+            if let Ok(data) = serde_json::from_str::<BalancerSetpointMessage>(message) {
                 if let Some(channels) = channels {
-                    if let Err(e) = channels.balancer_setpoint_sender.send(data.clone()) {
-                        error!("Failed to send setpoint: {}", e);
-                    } else {
-                        info!("Sent setpoint: {} -> {}kW", data.external_id, data.target_power_kw);
-                    }
-                } else {
-                    warn!("Channels not available - simulation mode");
+                    let _ = channels.balancer_setpoint_sender.send(data.clone());
                 }
-            } else {
-                error!("Invalid JSON format for BalancerSetpointData");
             }
         }
         "OCPP Request from Asset" => {

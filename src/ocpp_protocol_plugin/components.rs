@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::types::{EOcppVersion, EChargingRateUnit}; 
+use crate::ocpp_protocol_plugin::types::{EOcppVersion, EChargingRateUnit}; 
 use chrono::{DateTime, Utc};
 
 #[derive(Component, Debug, Clone, Reflect, Serialize, Deserialize)]

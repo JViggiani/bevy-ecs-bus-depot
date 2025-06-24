@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 use ocpp_bevy_poc::app_setup::{setup_bevy_app, AppMode};
-use ocpp_bevy_poc::balancer_comms_plugin::BalancerSetpointData;
+use ocpp_bevy_poc::balancer_comms_plugin::balancer_messages::BalancerSetpointMessage;
 use ocpp_bevy_poc::ocpp_protocol_plugin::events::{
     OcppRequestFromAsset,
 };
-use ocpp_bevy_poc::types::{
+use ocpp_bevy_poc::ocpp_protocol_plugin::types::{
     BootNotificationReqPayload,
     StatusNotificationReqPayload,
     EOutgoingOcppMessage,
@@ -35,10 +35,10 @@ fn test_charger_connect_setpoint_update() {
             "Phihong_AC_EU_Charger_Template": {
                 "asset_type": "Charger",
                 "components": [
-                    { "type": "AssetInfo", "make": "Phihong", "model": "AC_EU_Dual_V2" },
-                    { "type": "ChargerElectricalConfig", "nominal_voltage_ln": 230.0, "active_phase_count": 3 },
-                    { "type": "OcppProfileBehavior", "rate_unit": "Amps", "profile_phases_in_ocpp_message": 3 },
-                    { "type": "MeteringSource", "source_type": "Ocpp", "details": { "Ocpp": {} } }
+                    { "type": "asset_info", "make": "Phihong", "model": "AC_EU_Dual_V2" },
+                    { "type": "charger_electrical_config", "nominal_voltage_ln": 230.0, "active_phase_count": 3 },
+                    { "type": "ocpp_profile_behavior", "rate_unit": "Amps", "profile_phases_in_ocpp_message": 3 },
+                    { "type": "metering_source", "source_type": "Ocpp", "details": { "ocpp": {} } }
                 ]
             }
         },
@@ -47,7 +47,7 @@ fn test_charger_connect_setpoint_update() {
                 "external_id": "CH001",
                 "template_id": "Phihong_AC_EU_Charger_Template",
                 "instance_components": [
-                    { "type": "OcppConfig", "version": "V1_6J", "charge_point_id": "CH001" }
+                    { "type": "ocpp_config", "version": "V1_6J", "charge_point_id": "CH001" }
                 ]
             }
         ]
@@ -122,7 +122,7 @@ fn test_charger_connect_setpoint_update() {
     }
 
     // 7. Send 10 kW setpoint
-    balancer_setpoint_sender.send(BalancerSetpointData {
+    balancer_setpoint_sender.send(BalancerSetpointMessage {
         external_id:     asset_external_id.clone(),
         target_power_kw: 10.0,
     }).unwrap();
@@ -146,7 +146,7 @@ fn test_charger_connect_setpoint_update() {
     }
 
     // 8. Send 5 kW setpoint
-    balancer_setpoint_sender.send(BalancerSetpointData {
+    balancer_setpoint_sender.send(BalancerSetpointMessage {
         external_id:     asset_external_id.clone(),
         target_power_kw: 5.0,
     }).unwrap();

@@ -2,6 +2,7 @@ use bevy::prelude::*;
 pub mod components;
 pub mod events;
 pub mod systems;
+pub mod types;
 
 pub use components::*;
 pub use events::{OcppRequestFromAsset, OcppCommandToAsset, OcppFromAssetChannel, OcppToAssetChannel};
@@ -32,15 +33,18 @@ impl Plugin for OcppProtocolPlugin {
             .register_type::<GenericChargerInitProgress>()
             .add_event::<OcppRequestFromAsset>()
             .add_event::<OcppCommandToAsset>()
-            .add_systems(Update, ingest_ocpp_requests_from_channel_system)
             .add_systems(Update, (
-                ocpp_request_handler,
-                generic_ocpp_charger_initialization_system.after(ocpp_request_handler),
-                alfen_special_init_system.after(generic_ocpp_charger_initialization_system),
+                ingest_ocpp_requests_from_channel_system,
+                ocpp_request_handler
+                    .after(ingest_ocpp_requests_from_channel_system),
+                generic_ocpp_charger_initialization_system
+                    .after(ocpp_request_handler),
+                alfen_special_init_system
+                    .after(generic_ocpp_charger_initialization_system),
                 charger_control_to_ocpp_profile
-                    .after(alfen_special_init_system)
-                    .after(crate::balancer_comms_plugin::apply_incoming_setpoints_system),
-            ))
-            .add_systems(Update, export_ocpp_commands_to_channel_system);
+                    .after(alfen_special_init_system),
+                export_ocpp_commands_to_channel_system
+                    .after(charger_control_to_ocpp_profile),
+            ));
     }
 }
